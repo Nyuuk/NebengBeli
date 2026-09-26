@@ -19,6 +19,8 @@ type Config struct {
 
 	RateLimitAuth int // req/min
 	RateLimitAPI  int // req/min
+
+	EnableDevEndpoints bool
 }
 
 func LoadConfig() *Config {
@@ -43,7 +45,7 @@ func LoadConfig() *Config {
 
 	cookieDomain := getEnv("COOKIE_DOMAIN", "")
 
-	corsOriginsStr := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:5173")
+	corsOriginsStr := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost,http://localhost:80,http://localhost:8088,http://localhost:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8088")
 	corsOrigins := strings.Split(corsOriginsStr, ",")
 	for i := range corsOrigins {
 		corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
@@ -61,6 +63,12 @@ func LoadConfig() *Config {
 		rlAPI = 120
 	}
 
+	enableDevEndpoints := false
+	if env == "development" || env == "local" || env == "dev" {
+		devEnvStr := os.Getenv("ENABLE_DEV_ENDPOINTS")
+		enableDevEndpoints = devEnvStr == "true" || devEnvStr == "1"
+	}
+
 	return &Config{
 		Port:               port,
 		DatabaseURL:        dbURL,
@@ -73,6 +81,8 @@ func LoadConfig() *Config {
 
 		RateLimitAuth: rlAuth,
 		RateLimitAPI:  rlAPI,
+
+		EnableDevEndpoints: enableDevEndpoints,
 	}
 }
 

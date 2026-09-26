@@ -25,7 +25,7 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
 ## Tech Stack
 
 - **Backend**: Go 1.19+, Gin, PostgreSQL (`github.com/lib/pq`), `golang-jwt/jwt/v5`, `golang.org/x/crypto`, `golang.org/x/time`
-- **Frontend**: React 18, TypeScript, Material UI (MUI v5), React Router v6, `idb` (IndexedDB), Vite 5, PWA Service Worker
+- **Frontend**: React 18, TypeScript, Material UI (MUI v5), React Router v7, `idb` (IndexedDB), Vite 6, PWA Service Worker
 - **Database**: PostgreSQL 15+ (strictly 5 core tables with immutability triggers)
 - **Deployment**: Docker Compose & Nginx reverse proxy
 
@@ -38,14 +38,16 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
    cp .env.example .env
    ```
 
-2. Start the application with Docker Compose:
+2. Configure `.env` with secure values (e.g. `POSTGRES_PASSWORD`, `JWT_SECRET`, optional `FRONTEND_PORT=80` or `FRONTEND_PORT=8088`).
+
+3. Start the application with Docker Compose:
    ```bash
    make docker-up
    # or: docker compose up --build -d
    ```
 
-3. Open your browser:
-   - Frontend App: [http://localhost](http://localhost) (or port 80)
+4. Open your browser:
+   - Frontend App: [http://localhost](http://localhost) (or configured port, e.g. `http://localhost:8088`)
    - Backend Health Check: [http://localhost:8080/healthz](http://localhost:8080/healthz)
    - Create the first administrator explicitly with the CLI command below; no default credentials exist.
 
@@ -74,6 +76,65 @@ npm install
 npm run dev
 ```
 Frontend development server runs on `http://localhost:5173` with proxy forwarding `/api` to `http://localhost:8080`.
+
+---
+
+## Secure Context & PWA Local Setup
+
+NebengBeli is built as an offline-capable Progressive Web Application (PWA). Under W3C Secure Context specifications:
+
+1. **Localhost Development as Potentially Trustworthy Origin**:
+   - Modern browsers treat loopback origins (`http://localhost`, `http://127.0.0.1`, `http://[::1]`) as **Potentially Trustworthy Origins** (Secure Contexts) natively over plain HTTP.
+   - The Service Worker (`/service-worker.js`), Web App Manifest (`/manifest.json`), IndexedDB offline transaction queue, and Web Crypto APIs function natively when accessed via:
+     - `http://localhost:5173` (Vite frontend dev server)
+     - `http://localhost` or `http://localhost:8088` (Docker Compose HTTP accessed from the host)
+   - In accordance with web standards, Service Workers cannot be registered from `file://` URLs or insecure non-loopback HTTP origins.
+
+2. **Containerized Browser Topology (Camofox Bridge Rewriting) & Honest Architectural Constraints**:
+   - When a browser agent runs inside an isolated Docker container, navigating to `localhost` causes the container engine to rewrite the host address to the Docker bridge gateway (e.g. `http://172.17.0.1:8088`).
+   - Because `172.17.0.1` is a plain HTTP non-loopback IP address, native browsers strictly evaluate `window.isSecureContext === false` and disable Service Worker APIs.
+   - **Prohibited Workarounds**: Insecure browser flags (e.g., `--ignore-certificate-errors`, `--unsafely-treat-insecure-origin-as-secure`) and untrusted self-signed TLS certificates are strictly prohibited in production and compliance testing because they violate standards and produce browser TLS rejection errors.
+   - **Standards-Compliant Local Solutions**:
+     - **Option A (Preserve Loopback with Host Networking)**: Run the browser container with `--network host` so that `localhost:8088` directly resolves to `127.0.0.1`, preserving the loopback Potentially Trustworthy Origin natively.
+     - **Option B (Trusted Local TLS with mkcert)**:
+       1. Install a local root Certificate Authority into the host and browser trust stores:
+          ```bash
+          mkcert -install
+          ```
+       2. Generate trusted certificates covering all required SANs (including loopback and bridge IPs):
+          ```bash
+          mkdir -p certs
+          mkcert -cert-file certs/cert.pem -key-file certs/key.pem localhost 127.0.0.1 172.17.0.1 ::1
+          ```
+       3. Mount `./certs:/etc/nginx/certs:ro` into the frontend container and configure Nginx TLS listener on port 443/8443.
+       4. Access `https://localhost:8443` or `https://172.17.0.1:8443`. The native browser will establish trusted TLS without security warnings or disabled APIs.
+     - **Honest Scaffolding**: If the test runner environment does not allow installing a custom root CA into the container's NSS trust store or enabling host networking, plain HTTP across bridge `172.17.0.1` cannot be made a secure context under W3C specifications without external trusted infrastructure.
+
+3. **Production Deployments**:
+   - In production environments, terminate HTTPS with valid TLS certificates issued by an accredited public Certificate Authority (e.g., Let's Encrypt / automated ACME proxy) and set `COOKIE_SECURE=true`.
+
+---
+
+## Developer Fixture Endpoints & Automated Testing
+
+For integration test automation:
+- Dev endpoints (`/api/dev/*`) **fail closed by default** across all environments.
+- They can only be enabled for local development by explicitly exporting `ENABLE_DEV_ENDPOINTS=true` in a `development` or `local` environment:
+  ```bash
+  export ENVIRONMENT=development
+  export ENABLE_DEV_ENDPOINTS=true
+  go run ./backend/cmd/server/main.go
+  ```
+- In Docker Compose, enable dev endpoints for testing by setting environment variables:
+  ```bash
+  ENVIRONMENT=development ENABLE_DEV_ENDPOINTS=true docker compose up -d
+  ```
+- Dev endpoints are strictly locked out (404 Not Found) in `production` and `staging` environments regardless of environment variable values.
+- **Fail-Closed Session Policy**:
+  - `POST /api/dev/session` is **strictly disabled fail-closed** and always returns `403 Forbidden`. No password-free endpoint may issue authenticated sessions to arbitrary callers or predefined personas under any circumstances. No default passwords, embedded secrets, or session bypass tokens exist.
+  - **Native Browser Fixture Limitation**: Automated end-to-end browser testing cannot use passwordless session injection into browser contexts. Browser workflows must authenticate normally through standard login/registration flows (`POST /api/auth/login`, `POST /api/auth/register`).
+  - `POST /api/dev/fixtures/seed`: Seed predictable test scenario data (`"standard"`, `"empty"`, `"linked"`). Fixture users (`test_creator`, `test_owner`, `test_admin`) are created with cryptographically random hashed passwords and no session tokens or plaintext credentials are ever returned.
+  - `POST /api/dev/fixtures/reset`: Safely wipe test data from database tables in local development.
 
 ---
 

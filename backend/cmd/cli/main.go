@@ -31,6 +31,7 @@ Available Commands:
   wallets                  List all wallets with balance and owner status
   audit-logs               View recent system audit logs
   inspect-wallet           Inspect specific wallet statement and details
+  seed-fixtures            Seed predictable local fixtures for testing (local/dev only)
 
 Flags for create-admin:
   --username <username>    Admin username (required)
@@ -39,6 +40,9 @@ Flags for create-admin:
 Flags for reset-password:
   --username <username>    Target username
   --password <password>    New password
+
+Flags for seed-fixtures:
+  --scenario <name>        Scenario: standard | empty | linked (default: standard)
 
 Flags for audit-logs:
   --limit <n>              Number of logs to retrieve (default: 20)
@@ -258,6 +262,62 @@ func main() {
 				e.OccurredAt.Format(time.RFC3339), e.Type, e.Amount, e.RunningBalance, e.ItemName, e.Note, e.CreatedByUsername)
 		}
 		w.Flush()
+
+	case "seed-fixtures":
+		if !cfg.EnableDevEndpoints {
+			log.Fatalf("seed-fixtures command is disabled (requires local development environment and ENABLE_DEV_ENDPOINTS=true)")
+		}
+
+		fs := flag.NewFlagSet("seed-fixtures", flag.ExitOnError)
+		scenario := fs.String("scenario", "standard", "Scenario (standard/empty/linked)")
+		_ = fs.Parse(os.Args[2:])
+
+		createUser := func(uname string, r model.UserRole) *model.User {
+			u, err := userRepo.GetByUsername(ctx, uname)
+			if err == nil && u != nil {
+				return u
+			}
+			hash, _ := auth.HashPassword(uuid.New().String())
+			newUser := &model.User{
+				Username:     uname,
+				PasswordHash: hash,
+				Role:         r,
+				TokenVersion: 1,
+			}
+			_ = userRepo.Create(ctx, newUser)
+			return newUser
+		}
+
+		creator := createUser("test_creator", model.RoleUser)
+		owner := createUser("test_owner", model.RoleUser)
+		_ = createUser("test_admin", model.RoleAdmin)
+
+		if *scenario == "standard" || *scenario == "linked" {
+			wallet := &model.Wallet{
+				Name:      "Buku Makan Siang",
+				CreatorID: creator.ID,
+			}
+			if err := walletRepo.Create(ctx, wallet); err == nil {
+				if *scenario == "standard" {
+					entry1 := &model.Entry{
+						ClientID:   uuid.New(),
+						WalletID:   wallet.ID,
+						Type:       model.EntryTypeTitipan,
+						Amount:     50000,
+						ItemName:   "Nasi Padang",
+						Note:       "Makan siang bersama",
+						OccurredAt: time.Now().Add(-2 * time.Hour),
+						CreatedBy:  creator.ID,
+					}
+					_, _, _ = entryRepo.Create(ctx, entry1)
+				}
+				if *scenario == "linked" {
+					_ = walletRepo.SetOwner(ctx, wallet.ID, owner.ID)
+				}
+			}
+		}
+
+		fmt.Printf("Fixtures for scenario '%s' seeded successfully.\n", *scenario)
 
 	default:
 		fmt.Printf("Unknown command '%s'\n\n", command)
