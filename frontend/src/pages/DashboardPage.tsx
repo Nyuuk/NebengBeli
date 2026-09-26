@@ -48,8 +48,8 @@ export const DashboardPage: React.FC = () => {
         getWalletsApi(tab === 1),
         listLinkRequestsApi().catch(() => []),
       ]);
-      setWallets(list);
-      const pending = linkRequests.filter((r) => r.status === 'pending');
+      setWallets(list || []);
+      const pending = (linkRequests || []).filter((r) => r.status === 'pending');
       setPendingRequestsCount(pending.length);
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
@@ -83,7 +83,8 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const totalOutstanding = wallets.reduce((acc, w) => acc + (w.is_archived ? 0 : w.balance), 0);
+  const safeWallets = wallets || [];
+  const totalOutstanding = safeWallets.reduce((acc, w) => acc + (w.is_archived ? 0 : (w.balance || 0)), 0);
 
   return (
     <Layout>

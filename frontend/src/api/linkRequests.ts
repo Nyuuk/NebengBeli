@@ -15,7 +15,7 @@ export async function createLinkRequestApi(
 
 export async function listLinkRequestsApi(): Promise<LinkRequest[]> {
   const data = await request<{ link_requests: LinkRequest[] }>('/api/links');
-  return data.link_requests;
+  return data?.link_requests || [];
 }
 
 export async function getLinkRequestApi(id: string): Promise<LinkRequest> {

@@ -132,7 +132,7 @@ func (r *sqlLinkRequestRepository) ListForUser(ctx context.Context, userID uuid.
 	}
 	defer rows.Close()
 
-	var reqs []model.LinkRequest
+	reqs := make([]model.LinkRequest, 0)
 	for rows.Next() {
 		var lr model.LinkRequest
 		if err := rows.Scan(
@@ -176,7 +176,7 @@ func (r *sqlLinkRequestRepository) ListByWallet(ctx context.Context, walletID uu
 	}
 	defer rows.Close()
 
-	var reqs []model.LinkRequest
+	reqs := make([]model.LinkRequest, 0)
 	for rows.Next() {
 		var lr model.LinkRequest
 		if err := rows.Scan(

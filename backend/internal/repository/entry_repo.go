@@ -225,7 +225,7 @@ func (r *sqlEntryRepository) ListByWallet(ctx context.Context, filter EntryFilte
 	}
 	defer rows.Close()
 
-	var entries []model.Entry
+	entries := make([]model.Entry, 0)
 	for rows.Next() {
 		var e model.Entry
 		if err := rows.Scan(
@@ -300,6 +300,10 @@ func (r *sqlEntryRepository) MoveEntry(ctx context.Context, sourceWalletID, targ
 
 	if orig.WalletID != sourceWalletID {
 		return nil, nil, ErrEntryWalletMismatch
+	}
+
+	if orig.Type == model.EntryTypeKoreksi {
+		return nil, nil, errors.New("cannot move an entry of type koreksi")
 	}
 
 	now := time.Now().UTC()

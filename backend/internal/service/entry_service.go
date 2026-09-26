@@ -126,6 +126,9 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		if refEntry.WalletID != req.WalletID {
 			return nil, false, errors.New("referenced entry does not belong to this wallet")
 		}
+		if refEntry.Type == model.EntryTypeKoreksi {
+			return nil, false, errors.New("cannot correct an entry of type koreksi")
+		}
 		// Koreksi preserves whatever sign is specified
 		signedAmount = req.Amount
 	default:

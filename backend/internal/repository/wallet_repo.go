@@ -215,7 +215,7 @@ func (r *sqlWalletRepository) ListByUser(ctx context.Context, userID uuid.UUID, 
 	}
 	defer rows.Close()
 
-	var wallets []model.Wallet
+	wallets := make([]model.Wallet, 0)
 	for rows.Next() {
 		var w model.Wallet
 		if err := rows.Scan(
@@ -274,7 +274,7 @@ func (r *sqlWalletRepository) ListAll(ctx context.Context, limit, offset int) ([
 	}
 	defer rows.Close()
 
-	var wallets []model.Wallet
+	wallets := make([]model.Wallet, 0)
 	for rows.Next() {
 		var w model.Wallet
 		if err := rows.Scan(

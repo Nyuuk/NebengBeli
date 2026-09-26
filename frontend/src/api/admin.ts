@@ -12,7 +12,8 @@ export interface AdminStats {
 }
 
 export async function adminListUsersApi(limit = 50, offset = 0): Promise<{ users: User[]; total: number }> {
-  return request<{ users: User[]; total: number }>(`/api/admin/users?limit=${limit}&offset=${offset}`);
+  const data = await request<{ users: User[]; total: number }>(`/api/admin/users?limit=${limit}&offset=${offset}`);
+  return { users: data?.users || [], total: data?.total ?? 0 };
 }
 
 export async function adminResetPasswordApi(targetUsername: string, newPassword: string): Promise<{ message: string }> {
@@ -26,7 +27,8 @@ export async function adminResetPasswordApi(targetUsername: string, newPassword:
 }
 
 export async function adminListWalletsApi(limit = 50, offset = 0): Promise<{ wallets: Wallet[]; total: number }> {
-  return request<{ wallets: Wallet[]; total: number }>(`/api/admin/wallets?limit=${limit}&offset=${offset}`);
+  const data = await request<{ wallets: Wallet[]; total: number }>(`/api/admin/wallets?limit=${limit}&offset=${offset}`);
+  return { wallets: data?.wallets || [], total: data?.total ?? 0 };
 }
 
 export async function adminListAuditLogsApi(params: {
@@ -44,7 +46,8 @@ export async function adminListAuditLogsApi(params: {
   if (params.actor_id) searchParams.set('actor_id', params.actor_id);
 
   const qs = searchParams.toString();
-  return request<{ audit_logs: AuditLog[]; total: number }>(`/api/admin/audit-logs${qs ? `?${qs}` : ''}`);
+  const data = await request<{ audit_logs: AuditLog[]; total: number }>(`/api/admin/audit-logs${qs ? `?${qs}` : ''}`);
+  return { audit_logs: data?.audit_logs || [], total: data?.total ?? 0 };
 }
 
 export async function adminGetStatsApi(): Promise<{ stats: AdminStats }> {

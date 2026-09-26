@@ -109,7 +109,7 @@ func (r *sqlAuditRepository) List(ctx context.Context, filter AuditLogFilter) ([
 	}
 	defer rows.Close()
 
-	var logs []model.AuditLog
+	logs := make([]model.AuditLog, 0)
 	for rows.Next() {
 		var l model.AuditLog
 		if err := rows.Scan(

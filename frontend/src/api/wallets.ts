@@ -4,7 +4,7 @@ import { Wallet } from '../types';
 export async function getWalletsApi(archived = false): Promise<Wallet[]> {
   const query = archived ? '?archived=true' : '';
   const data = await request<{ wallets: Wallet[] }>(`/api/wallets${query}`);
-  return data.wallets;
+  return data?.wallets || [];
 }
 
 export async function getWalletApi(id: string): Promise<Wallet> {

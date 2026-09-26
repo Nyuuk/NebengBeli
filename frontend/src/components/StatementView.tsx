@@ -32,8 +32,8 @@ interface StatementViewProps {
 }
 
 export const StatementView: React.FC<StatementViewProps> = ({
-  entries,
-  totalCount,
+  entries = [],
+  totalCount = 0,
   page,
   pageSize,
   onPageChange,
@@ -41,7 +41,8 @@ export const StatementView: React.FC<StatementViewProps> = ({
   onMoveEntry,
   isArchivedWallet,
 }) => {
-  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  const safeEntries = entries || [];
+  const totalPages = Math.ceil((totalCount || 0) / (pageSize || 25)) || 1;
 
   const getTypeChip = (type: string, isOffline?: boolean) => {
     if (isOffline) {
@@ -86,7 +87,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
             </TableRow>
           </TableHead>
           <TableBody>
-            {entries.length === 0 ? (
+            {safeEntries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={isArchivedWallet ? 6 : 7} align="center" sx={{ py: 4 }}>
                   <Typography variant="body2" color="text.secondary">
@@ -95,7 +96,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                 </TableCell>
               </TableRow>
             ) : (
-              entries.map((e) => (
+              safeEntries.map((e) => (
                 <TableRow key={e.id} hover sx={{ opacity: e.is_offline_pending ? 0.75 : 1 }}>
                   <TableCell>
                     <Typography variant="body2">
@@ -150,22 +151,22 @@ export const StatementView: React.FC<StatementViewProps> = ({
                   {!isArchivedWallet && (
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                        <Tooltip title="Koreksi Entri">
+                        <Tooltip title={e.type === 'koreksi' ? 'Entri koreksi tidak dapat dikoreksi ulang' : 'Koreksi Entri'}>
                           <span>
                             <IconButton
                               size="small"
-                              disabled={e.is_offline_pending}
+                              disabled={Boolean(e.is_offline_pending || e.type === 'koreksi')}
                               onClick={() => onCorrectEntry(e)}
                             >
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title="Pindah ke Wallet Lain">
+                        <Tooltip title={e.type === 'koreksi' ? 'Entri koreksi tidak dapat dipindah' : 'Pindah ke Wallet Lain'}>
                           <span>
                             <IconButton
                               size="small"
-                              disabled={e.is_offline_pending}
+                              disabled={Boolean(e.is_offline_pending || e.type === 'koreksi')}
                               onClick={() => onMoveEntry(e)}
                             >
                               <SwapHorizIcon fontSize="small" />
