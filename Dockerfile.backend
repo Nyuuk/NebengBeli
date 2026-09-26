@@ -1,0 +1,29 @@
+# Stage 1: Build binary
+FROM golang:1.19-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache git ca-certificates
+
+COPY backend/go.mod backend/go.sum* ./
+RUN go mod download
+
+COPY backend/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/nebengbeli-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/nebengbeli-cli ./cmd/cli
+
+# Stage 2: Minimal runtime image
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+
+COPY --from=builder /app/nebengbeli-server /app/nebengbeli-server
+COPY --from=builder /app/nebengbeli-cli /app/nebengbeli-cli
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:8080/healthz || exit 1
+
+ENTRYPOINT ["/app/nebengbeli-server"]

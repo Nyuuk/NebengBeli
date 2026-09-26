@@ -1,0 +1,29 @@
+# Binaries and build artifacts
+backend/bin/
+backend/nebengbeli-server
+backend/nebengbeli-cli
+dist/
+build/
+*.exe
+*.test
+*.out
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Local Secrets
+.env
+.env.local
+
+# OS and Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+postgres_data/
