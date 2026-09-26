@@ -592,4 +592,140 @@ func TestIndexHtmlServiceWorkerDoesNotRegisterOnFileProtocol(t *testing.T) {
 	if !strings.Contains(contentStr, "navigator.serviceWorker.register") {
 		t.Errorf("frontend/index.html missing navigator.serviceWorker.register")
 	}
+	if !strings.Contains(contentStr, "isSecureContext") {
+		t.Errorf("frontend/index.html missing isSecureContext check")
+	}
+}
+
+func TestNginxConfigurationHasSecurityAndPWAHeaders(t *testing.T) {
+	nginxPaths := []string{
+		filepath.Join("..", "..", "nginx.conf"),
+		filepath.Join("nginx.conf"),
+	}
+
+	var content []byte
+	var err error
+	for _, p := range nginxPaths {
+		content, err = os.ReadFile(p)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("failed to read nginx.conf: %v", err)
+	}
+
+	nginxStr := string(content)
+	if !strings.Contains(nginxStr, "listen 80;") {
+		t.Errorf("nginx.conf missing 'listen 80;'")
+	}
+	if !strings.Contains(nginxStr, "Service-Worker-Allowed") {
+		t.Errorf("nginx.conf missing Service-Worker-Allowed header")
+	}
+	if !strings.Contains(nginxStr, "application/manifest+json") {
+		t.Errorf("nginx.conf missing application/manifest+json content-type")
+	}
+	if !strings.Contains(nginxStr, "X-Content-Type-Options") {
+		t.Errorf("nginx.conf missing X-Content-Type-Options security header")
+	}
+	if !strings.Contains(nginxStr, "X-Frame-Options") {
+		t.Errorf("nginx.conf missing X-Frame-Options security header")
+	}
+}
+
+func TestDevHandlerDirectInvocationFailClosed(t *testing.T) {
+	// Scenario: Even if routes are mounted, DevHandler must reject requests when Environment is production
+	prodCfg := &config.Config{
+		Environment:        "production",
+		EnableDevEndpoints: false,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(prodCfg.JWTSecret, prodCfg.JWTExpiry)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, prodCfg)
+
+	r := gin.New()
+	r.POST("/dev/session", devHandler.CreateSession)
+	r.POST("/dev/fixtures/reset", devHandler.ResetFixtures)
+	r.POST("/dev/fixtures/seed", devHandler.SeedFixtures)
+	r.GET("/dev/status", devHandler.Status)
+
+	endpoints := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{"POST", "/dev/session", `{"username":"dev_user","role":"user"}`},
+		{"POST", "/dev/fixtures/reset", `{}`},
+		{"POST", "/dev/fixtures/seed", `{}`},
+		{"GET", "/dev/status", ``},
+	}
+
+	for _, ep := range endpoints {
+		w := httptest.NewRecorder()
+		var req *http.Request
+		if ep.body != "" {
+			req, _ = http.NewRequest(ep.method, ep.path, strings.NewReader(ep.body))
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req, _ = http.NewRequest(ep.method, ep.path, nil)
+		}
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403 Forbidden for endpoint %s in production, got %d: %s", ep.path, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestDevSessionAdminRoleCreation(t *testing.T) {
+	cfg := &config.Config{
+		Environment:        "development",
+		EnableDevEndpoints: true,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
+
+	r := gin.New()
+	dev := r.Group("/api/dev")
+	{
+		dev.POST("/session", devHandler.CreateSession)
+	}
+
+	// Create dev admin session
+	body := `{"username":"dev_admin","role":"admin"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dev admin session creation, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	userResp, ok := resp["user"].(map[string]interface{})
+	if !ok || userResp["role"] != "admin" {
+		t.Errorf("expected user role admin, got %v", userResp["role"])
+	}
 }

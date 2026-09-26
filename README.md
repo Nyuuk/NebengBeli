@@ -25,7 +25,7 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
 ## Tech Stack
 
 - **Backend**: Go 1.19+, Gin, PostgreSQL (`github.com/lib/pq`), `golang-jwt/jwt/v5`, `golang.org/x/crypto`, `golang.org/x/time`
-- **Frontend**: React 18, TypeScript, Material UI (MUI v5), React Router v6, `idb` (IndexedDB), Vite 5, PWA Service Worker
+- **Frontend**: React 18, TypeScript, Material UI (MUI v5), React Router v7, `idb` (IndexedDB), Vite 6, PWA Service Worker
 - **Database**: PostgreSQL 15+ (strictly 5 core tables with immutability triggers)
 - **Deployment**: Docker Compose & Nginx reverse proxy
 
@@ -38,14 +38,16 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
    cp .env.example .env
    ```
 
-2. Start the application with Docker Compose:
+2. Configure `.env` with secure values (e.g. `POSTGRES_PASSWORD`, `JWT_SECRET`, optional `FRONTEND_PORT=80` or `FRONTEND_PORT=8088`).
+
+3. Start the application with Docker Compose:
    ```bash
    make docker-up
    # or: docker compose up --build -d
    ```
 
-3. Open your browser:
-   - Frontend App: [http://localhost](http://localhost) (or port 80)
+4. Open your browser:
+   - Frontend App: [http://localhost](http://localhost) (or configured port, e.g. `http://localhost:8088`)
    - Backend Health Check: [http://localhost:8080/healthz](http://localhost:8080/healthz)
    - Create the first administrator explicitly with the CLI command below; no default credentials exist.
 
@@ -81,18 +83,25 @@ Frontend development server runs on `http://localhost:5173` with proxy forwardin
 
 NebengBeli is built as an offline-capable Progressive Web Application (PWA). Under W3C Secure Context specifications:
 
-1. **Localhost Development as Secure Context**:
-   - Modern browsers treat `http://localhost` and `http://127.0.0.1` as **Potentially Trustworthy Origins** (Secure Contexts).
-   - The Service Worker (`/service-worker.js`), Web App Manifest (`/manifest.json`), IndexedDB offline transaction queue, and Web Crypto APIs function natively when accessed via `http://localhost:5173` (Vite dev server) or `http://localhost` (Docker Nginx reverse proxy).
+1. **Localhost Development as Potentially Trustworthy Origin**:
+   - Modern browsers treat loopback origins (`http://localhost`, `http://127.0.0.1`, `http://[::1]`) as **Potentially Trustworthy Origins** (Secure Contexts) natively over plain HTTP.
+   - The Service Worker (`/service-worker.js`), Web App Manifest (`/manifest.json`), IndexedDB offline transaction queue, and Web Crypto APIs function natively when accessed via:
+     - `http://localhost:5173` (Vite frontend dev server)
+     - `http://localhost` or `http://localhost:8088` (Docker Compose HTTP)
    - In accordance with web standards, Service Workers cannot be registered from `file://` URLs.
 
-2. **Mobile / Remote Device Testing**:
-   - To test PWA installation on physical mobile devices over USB without installing self-signed TLS certificates, use Android reverse port forwarding:
+2. **Non-Loopback Origins & Limitations of Self-Signed Certificates**:
+   - Accessing raw non-loopback IP addresses (e.g. `http://192.168.x.x` or `http://172.x.x.x`) over plain HTTP is rejected by browsers as an insecure context.
+   - Self-signed TLS certificates are **not trusted** by native browsers and cannot be accepted via insecure bypass; browsers block Service Worker and PWA capabilities on untrusted HTTPS origins unless a custom root CA is explicitly imported into the system/browser trust store.
+   - For containerized or headless test runners across network boundaries, route traffic through `localhost` port forwarding or host networking so the browser evaluates the origin as a loopback secure context.
+
+3. **Mobile / Remote Device Testing**:
+   - To test PWA installation on physical mobile devices over USB without custom CA certificate installation, use Android reverse port forwarding:
      ```bash
      adb reverse tcp:5173 tcp:5173
      # Access http://localhost:5173 on the mobile device browser
      ```
-   - In production environments, HTTPS with valid TLS certificates must be terminated at the reverse proxy or ingress.
+   - In production environments, terminate HTTPS with valid TLS certificates issued by a trusted Certificate Authority (e.g., Let's Encrypt / reverse proxy).
 
 ---
 
@@ -106,7 +115,15 @@ For end-to-end and integration test automation:
   export ENABLE_DEV_ENDPOINTS=true
   go run ./backend/cmd/server/main.go
   ```
+- In Docker Compose, enable dev endpoints for testing by setting environment variables:
+  ```bash
+  ENVIRONMENT=development ENABLE_DEV_ENDPOINTS=true docker compose up -d
+  ```
 - Dev endpoints are strictly locked out in `production` and `staging` environments regardless of environment variable values.
+- Available dev endpoints:
+  - `POST /api/dev/session`: Issue authenticated JWT cookie and token for a username (e.g. `{"username": "test_creator", "role": "user"}`) without entering raw passwords.
+  - `POST /api/dev/fixtures/seed`: Seed predictable scenario data (`"standard"`, `"empty"`, `"linked"`).
+  - `POST /api/dev/fixtures/reset`: Safely wipe test data from database tables in local development.
 
 ---
 

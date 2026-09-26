@@ -20,18 +20,32 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      (function() {
+        if (!('serviceWorker' in navigator)) {
+          if (!window.isSecureContext) {
+            console.warn('[PWA] Service Worker registration skipped: Origin is not a Secure Context. To enable PWA Service Worker, access the application via https://, http://localhost, or http://127.0.0.1.');
+          } else {
+            console.warn('[PWA] Service Worker is not supported in this browser environment.');
+          }
+          return;
+        }
+
         const registerSW = () => {
-          navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(err => {
-            console.log('SW registration failed: ', err);
-          });
+          navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+            .then(function(reg) {
+              console.log('[PWA] Service Worker registered successfully, scope:', reg.scope);
+            })
+            .catch(function(err) {
+              console.warn('[PWA] Service Worker registration failed:', err);
+            });
         };
+
         if (document.readyState === 'complete') {
           registerSW();
         } else {
           window.addEventListener('load', registerSW);
         }
-      }
+      })();
     </script>
   </body>
 </html>

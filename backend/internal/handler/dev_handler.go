@@ -58,8 +58,21 @@ type DevSeedRequest struct {
 	Scenario string `json:"scenario"` // "empty", "standard", "linked"
 }
 
+func (h *DevHandler) isDevAllowed() bool {
+	if h.cfg == nil || !h.cfg.EnableDevEndpoints {
+		return false
+	}
+	env := h.cfg.Environment
+	return env == "development" || env == "local" || env == "dev"
+}
+
 // Status returns dev handler status
 func (h *DevHandler) Status(c *gin.Context) {
+	if !h.isDevAllowed() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "developer endpoints are strictly disabled in this environment"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":     h.cfg.EnableDevEndpoints,
 		"environment": h.cfg.Environment,
@@ -69,6 +82,11 @@ func (h *DevHandler) Status(c *gin.Context) {
 
 // CreateSession generates an authenticated session token & cookie without requiring credentials
 func (h *DevHandler) CreateSession(c *gin.Context) {
+	if !h.isDevAllowed() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "developer endpoints are strictly disabled in this environment"})
+		return
+	}
+
 	var req DevSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -106,8 +124,10 @@ func (h *DevHandler) CreateSession(c *gin.Context) {
 		}
 	} else if user.Role != role {
 		// Update role if explicitly requested
-		query := `UPDATE users SET role = $1 WHERE id = $2`
-		_, _ = h.db.ExecContext(ctx, query, role, user.ID)
+		if h.db != nil {
+			query := `UPDATE users SET role = $1 WHERE id = $2`
+			_, _ = h.db.ExecContext(ctx, query, role, user.ID)
+		}
 		user.Role = role
 	}
 
@@ -138,6 +158,11 @@ func (h *DevHandler) CreateSession(c *gin.Context) {
 
 // ResetFixtures wipes data from tables safely in dev context
 func (h *DevHandler) ResetFixtures(c *gin.Context) {
+	if !h.isDevAllowed() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "developer endpoints are strictly disabled in this environment"})
+		return
+	}
+
 	ctx := c.Request.Context()
 
 	tx, err := h.db.BeginTx(ctx, nil)
@@ -172,6 +197,11 @@ func (h *DevHandler) ResetFixtures(c *gin.Context) {
 
 // SeedFixtures seeds predictable local test data for automated tests
 func (h *DevHandler) SeedFixtures(c *gin.Context) {
+	if !h.isDevAllowed() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "developer endpoints are strictly disabled in this environment"})
+		return
+	}
+
 	var req DevSeedRequest
 	_ = c.ShouldBindJSON(&req)
 	scenario := req.Scenario
