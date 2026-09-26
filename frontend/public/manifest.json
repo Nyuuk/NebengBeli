@@ -1,0 +1,16 @@
+{
+  "short_name": "NebengBeli",
+  "name": "NebengBeli - Buku Titipan & Ledger",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#1976d2",
+  "display": "standalone",
+  "orientation": "portrait"
+}
