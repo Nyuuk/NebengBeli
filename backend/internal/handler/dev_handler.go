@@ -5,14 +5,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/nyuuk/nebengbeli/internal/auth"
 	"github.com/nyuuk/nebengbeli/internal/config"
-	"github.com/nyuuk/nebengbeli/internal/middleware"
 	"github.com/nyuuk/nebengbeli/internal/model"
 	"github.com/nyuuk/nebengbeli/internal/repository"
 )
@@ -50,30 +48,12 @@ func NewDevHandler(
 	}
 }
 
-// Predefined fixture constants and mappings
+// Predefined fixture constants
 const (
 	FixtureCreatorUsername = "test_creator"
 	FixtureOwnerUsername   = "test_owner"
 	FixtureAdminUsername   = "test_admin"
 )
-
-var PredefinedFixtureRoles = map[string]model.UserRole{
-	FixtureCreatorUsername: model.RoleUser,
-	FixtureOwnerUsername:   model.RoleUser,
-	FixtureAdminUsername:   model.RoleAdmin,
-}
-
-var PredefinedFixturePersonas = map[string]string{
-	"creator": FixtureCreatorUsername,
-	"owner":   FixtureOwnerUsername,
-	"admin":   FixtureAdminUsername,
-}
-
-type DevSessionRequest struct {
-	Persona  string `json:"persona"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-}
 
 type DevSeedRequest struct {
 	Scenario string `json:"scenario"` // "empty", "standard", "linked"
@@ -97,103 +77,19 @@ func (h *DevHandler) Status(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":     h.cfg.EnableDevEndpoints,
 		"environment": h.cfg.Environment,
-		"message":     "Dev fixtures and session endpoints active (local/dev only)",
+		"message":     "Dev fixture endpoints active (local/dev only; passwordless session issuance is strictly disabled)",
 	})
 }
 
-// CreateSession generates an authenticated session token & cookie for strictly predefined fixture personas
+// CreateSession is strictly disabled fail-closed: no password-free endpoint may issue authenticated sessions to any caller
 func (h *DevHandler) CreateSession(c *gin.Context) {
 	if !h.isDevAllowed() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "developer endpoints are strictly disabled in this environment"})
 		return
 	}
 
-	var req DevSessionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var targetUsername string
-	if req.Persona != "" {
-		pName, ok := PredefinedFixturePersonas[strings.ToLower(req.Persona)]
-		if !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fixture persona: must be 'creator', 'owner', or 'admin'"})
-			return
-		}
-		targetUsername = pName
-	} else if req.Username != "" {
-		targetUsername = req.Username
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing fixture identifier: provide 'persona' ('creator', 'owner', 'admin') or 'username' ('test_creator', 'test_owner', 'test_admin')"})
-		return
-	}
-
-	// Strictly validate that the target username is a predefined fixture persona
-	expectedRole, isAllowed := PredefinedFixtureRoles[targetUsername]
-	if !isAllowed {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: dev session endpoint only permits predefined test fixture personas and strictly rejects arbitrary usernames"})
-		return
-	}
-
-	// Strictly forbid role selection or role escalation
-	if req.Role != "" && req.Role != string(expectedRole) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: role selection and role escalation are disallowed on fixture accounts"})
-		return
-	}
-
-	ctx := c.Request.Context()
-	user, err := h.userRepo.GetByUsername(ctx, targetUsername)
-	if err != nil {
-		// Provision the predefined fixture user with immutable predefined role
-		randomBytes := make([]byte, 16)
-		_, _ = rand.Read(randomBytes)
-		randomSecret := hex.EncodeToString(randomBytes)
-		hash, hashErr := auth.HashPassword(randomSecret)
-		if hashErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate internal password hash"})
-			return
-		}
-
-		user = &model.User{
-			Username:     targetUsername,
-			PasswordHash: hash,
-			Role:         expectedRole,
-			TokenVersion: 1,
-		}
-
-		if err := h.userRepo.Create(ctx, user); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create dev fixture user: " + err.Error()})
-			return
-		}
-	} else if user.Role != expectedRole {
-		// Ensure role matches fixture definition without mutating DB dynamically
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database state mismatch: fixture user role does not match predefined specification"})
-		return
-	}
-
-	token, err := h.jwtMgr.GenerateToken(user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token: " + err.Error()})
-		return
-	}
-
-	// Set auth cookie
-	maxAge := int(h.cfg.JWTExpiry.Seconds())
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(
-		middleware.CookieTokenKey,
-		token,
-		maxAge,
-		"/",
-		h.cfg.CookieDomain,
-		h.cfg.CookieSecure,
-		true, // HttpOnly
-	)
-
-	c.JSON(http.StatusOK, gin.H{
-		"user":  user.ToResponse(),
-		"token": token,
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": "passwordless session issuance is strictly disabled: authenticated sessions cannot be issued without valid credentials",
 	})
 }
 

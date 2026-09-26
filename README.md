@@ -117,7 +117,7 @@ NebengBeli is built as an offline-capable Progressive Web Application (PWA). Und
 
 ## Developer Fixture Endpoints & Automated Testing
 
-For end-to-end and integration test automation:
+For integration test automation:
 - Dev endpoints (`/api/dev/*`) **fail closed by default** across all environments.
 - They can only be enabled for local development by explicitly exporting `ENABLE_DEV_ENDPOINTS=true` in a `development` or `local` environment:
   ```bash
@@ -129,12 +129,11 @@ For end-to-end and integration test automation:
   ```bash
   ENVIRONMENT=development ENABLE_DEV_ENDPOINTS=true docker compose up -d
   ```
-- Dev endpoints are strictly locked out in `production` and `staging` environments regardless of environment variable values.
-- **Fail-Closed Fixture Policy**:
-  - `POST /api/dev/session`: Only issues session tokens for strictly predefined fixture personas (`creator`, `owner`, `admin`) or predefined fixture usernames (`test_creator`, `test_owner`, `test_admin`).
-  - Arbitrary username creation and arbitrary role selection/escalation are strictly forbidden and rejected with `403 Forbidden`.
-  - Roles are immutable and defined by the fixture specification (`test_creator` is `user`, `test_owner` is `user`, `test_admin` is `admin`).
-  - `POST /api/dev/fixtures/seed`: Seed predictable scenario data (`"standard"`, `"empty"`, `"linked"`).
+- Dev endpoints are strictly locked out (404 Not Found) in `production` and `staging` environments regardless of environment variable values.
+- **Fail-Closed Session Policy**:
+  - `POST /api/dev/session` is **strictly disabled fail-closed** and always returns `403 Forbidden`. No password-free endpoint may issue authenticated sessions to arbitrary callers or predefined personas under any circumstances. No default passwords, embedded secrets, or session bypass tokens exist.
+  - **Native Browser Fixture Limitation**: Automated end-to-end browser testing cannot use passwordless session injection into browser contexts. Browser workflows must authenticate normally through standard login/registration flows (`POST /api/auth/login`, `POST /api/auth/register`).
+  - `POST /api/dev/fixtures/seed`: Seed predictable test scenario data (`"standard"`, `"empty"`, `"linked"`). Fixture users (`test_creator`, `test_owner`, `test_admin`) are created with cryptographically random hashed passwords and no session tokens or plaintext credentials are ever returned.
   - `POST /api/dev/fixtures/reset`: Safely wipe test data from database tables in local development.
 
 ---

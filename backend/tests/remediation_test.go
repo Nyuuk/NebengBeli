@@ -17,7 +17,6 @@ import (
 	"github.com/nyuuk/nebengbeli/internal/auth"
 	"github.com/nyuuk/nebengbeli/internal/config"
 	"github.com/nyuuk/nebengbeli/internal/handler"
-	"github.com/nyuuk/nebengbeli/internal/middleware"
 	"github.com/nyuuk/nebengbeli/internal/model"
 	"github.com/nyuuk/nebengbeli/internal/repository"
 	"github.com/nyuuk/nebengbeli/internal/service"
@@ -459,7 +458,7 @@ func TestDevEndpointsDisabledInProduction(t *testing.T) {
 	}
 }
 
-func TestDevSessionCreationAndAuth(t *testing.T) {
+func TestDevSessionEndpointStrictlyDisabledFailClosed(t *testing.T) {
 	cfg := &config.Config{
 		Environment:        "development",
 		EnableDevEndpoints: true,
@@ -473,7 +472,6 @@ func TestDevSessionCreationAndAuth(t *testing.T) {
 	linkRepo := &mockLinkRepo{}
 	auditRepo := &mockAuditRepo{}
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
-	authSvc := service.NewAuthService(userRepo, auditRepo, jwtMgr)
 
 	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
 
@@ -487,55 +485,41 @@ func TestDevSessionCreationAndAuth(t *testing.T) {
 		}
 	}
 
-	authRequired := api.Group("")
-	authRequired.Use(middleware.AuthMiddleware(jwtMgr, authSvc))
-	authRequired.GET("/auth/me", func(c *gin.Context) {
-		u, _ := middleware.GetCurrentUser(c)
-		c.JSON(http.StatusOK, gin.H{"user": u.ToResponse()})
-	})
-
-	// 1. Create Dev Session for predefined test_creator
-	sessionPayload := `{"username":"test_creator"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(sessionPayload))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200 from dev session for test_creator, got %d: %s", w.Code, w.Body.String())
+	payloads := []struct {
+		desc string
+		body string
+	}{
+		{"empty payload", `{}`},
+		{"fixture creator username", `{"username":"test_creator"}`},
+		{"fixture owner username", `{"username":"test_owner"}`},
+		{"fixture admin username", `{"username":"test_admin"}`},
+		{"fixture creator persona", `{"persona":"creator"}`},
+		{"fixture admin persona", `{"persona":"admin"}`},
+		{"arbitrary username", `{"username":"arbitrary_user"}`},
+		{"attacker persona", `{"persona":"attacker"}`},
+		{"role escalation attempt", `{"username":"test_creator","role":"admin"}`},
 	}
 
-	var sessionResp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &sessionResp); err != nil {
-		t.Fatalf("failed to unmarshal session response: %v", err)
-	}
+	for _, tc := range payloads {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
 
-	token, ok := sessionResp["token"].(string)
-	if !ok || token == "" {
-		t.Fatalf("expected valid token in session response")
-	}
+		if w.Code != http.StatusForbidden {
+			t.Errorf("[%s] expected 403 Forbidden for /api/dev/session, got %d: %s", tc.desc, w.Code, w.Body.String())
+		}
 
-	// 2. Use the token to access protected endpoint
-	wAuth := httptest.NewRecorder()
-	reqAuth, _ := http.NewRequest("GET", "/api/auth/me", nil)
-	reqAuth.Header.Set("Authorization", "Bearer "+token)
-	r.ServeHTTP(wAuth, reqAuth)
+		// Ensure no auth cookie was issued
+		if cookieHeader := w.Header().Get("Set-Cookie"); cookieHeader != "" {
+			t.Errorf("[%s] expected no Set-Cookie header on rejected dev session, got: %s", tc.desc, cookieHeader)
+		}
 
-	if wAuth.Code != http.StatusOK {
-		t.Fatalf("expected status 200 from protected endpoint with dev token, got %d: %s", wAuth.Code, wAuth.Body.String())
-	}
-
-	var meResp map[string]interface{}
-	if err := json.Unmarshal(wAuth.Body.Bytes(), &meResp); err != nil {
-		t.Fatalf("failed to unmarshal me response: %v", err)
-	}
-
-	userData, _ := meResp["user"].(map[string]interface{})
-	if userData["username"] != "test_creator" {
-		t.Errorf("expected username test_creator, got %v", userData["username"])
-	}
-	if userData["role"] != "user" {
-		t.Errorf("expected role user, got %v", userData["role"])
+		var resp map[string]interface{}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		if resp["token"] != nil {
+			t.Errorf("[%s] expected no token issued on rejected dev session, got: %v", tc.desc, resp["token"])
+		}
 	}
 }
 
@@ -688,151 +672,6 @@ func TestDevHandlerDirectInvocationFailClosed(t *testing.T) {
 	}
 }
 
-func TestDevSessionArbitraryUsernameRejected(t *testing.T) {
-	cfg := &config.Config{
-		Environment:        "development",
-		EnableDevEndpoints: true,
-		JWTSecret:          "secret-key-32-chars-minimum-length!",
-		JWTExpiry:          1 * time.Hour,
-	}
-
-	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
-	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
-	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
-	linkRepo := &mockLinkRepo{}
-	auditRepo := &mockAuditRepo{}
-	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
-
-	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
-
-	r := gin.New()
-	dev := r.Group("/api/dev")
-	{
-		dev.POST("/session", devHandler.CreateSession)
-	}
-
-	arbitraryUsers := []string{"arbitrary_user", "attacker", "random_victim", "root", "guest"}
-	for _, username := range arbitraryUsers {
-		body := `{"username":"` + username + `"}`
-		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		r.ServeHTTP(w, req)
-
-		if w.Code != http.StatusForbidden {
-			t.Errorf("expected 403 Forbidden when requesting dev session for arbitrary username %s, got %d: %s", username, w.Code, w.Body.String())
-		}
-	}
-}
-
-func TestDevSessionRoleSelectionAndEscalationRejected(t *testing.T) {
-	cfg := &config.Config{
-		Environment:        "development",
-		EnableDevEndpoints: true,
-		JWTSecret:          "secret-key-32-chars-minimum-length!",
-		JWTExpiry:          1 * time.Hour,
-	}
-
-	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
-	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
-	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
-	linkRepo := &mockLinkRepo{}
-	auditRepo := &mockAuditRepo{}
-	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
-
-	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
-
-	r := gin.New()
-	dev := r.Group("/api/dev")
-	{
-		dev.POST("/session", devHandler.CreateSession)
-	}
-
-	// 1. Attempt to escalate test_creator to admin role -> must be 403
-	body := `{"username":"test_creator","role":"admin"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403 Forbidden for role escalation on test_creator, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// 2. Attempt to select arbitrary role on test_admin -> must be 403 if role != admin
-	body = `{"username":"test_admin","role":"user"}`
-	w = httptest.NewRecorder()
-	req, _ = http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403 Forbidden for role mutation on test_admin, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestDevSessionAllFixturePersonas(t *testing.T) {
-	cfg := &config.Config{
-		Environment:        "development",
-		EnableDevEndpoints: true,
-		JWTSecret:          "secret-key-32-chars-minimum-length!",
-		JWTExpiry:          1 * time.Hour,
-	}
-
-	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
-	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
-	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
-	linkRepo := &mockLinkRepo{}
-	auditRepo := &mockAuditRepo{}
-	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
-
-	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
-
-	r := gin.New()
-	dev := r.Group("/api/dev")
-	{
-		dev.POST("/session", devHandler.CreateSession)
-	}
-
-	cases := []struct {
-		persona      string
-		expectedUser string
-		expectedRole string
-	}{
-		{"creator", "test_creator", "user"},
-		{"owner", "test_owner", "user"},
-		{"admin", "test_admin", "admin"},
-	}
-
-	for _, c := range cases {
-		body := `{"persona":"` + c.persona + `"}`
-		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		r.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected 200 for persona %s, got %d: %s", c.persona, w.Code, w.Body.String())
-		}
-
-		var resp map[string]interface{}
-		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("failed to unmarshal response: %v", err)
-		}
-
-		userResp, ok := resp["user"].(map[string]interface{})
-		if !ok {
-			t.Fatalf("user object missing in response")
-		}
-		if userResp["username"] != c.expectedUser {
-			t.Errorf("expected username %s, got %v", c.expectedUser, userResp["username"])
-		}
-		if userResp["role"] != c.expectedRole {
-			t.Errorf("expected role %s, got %v", c.expectedRole, userResp["role"])
-		}
-	}
-}
-
 func TestDevFixturesSeedHandler(t *testing.T) {
 	cfg := &config.Config{
 		Environment:        "development",
@@ -866,14 +705,41 @@ func TestDevFixturesSeedHandler(t *testing.T) {
 		t.Fatalf("expected 200 for seed fixtures, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Verify test users seeded
-	if _, err := userRepo.GetByUsername(context.Background(), "test_creator"); err != nil {
-		t.Errorf("expected test_creator to be seeded")
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal seed fixtures response: %v", err)
 	}
-	if _, err := userRepo.GetByUsername(context.Background(), "test_owner"); err != nil {
-		t.Errorf("expected test_owner to be seeded")
+
+	// Verify no tokens or plaintext passwords in response
+	if resp["token"] != nil {
+		t.Errorf("seed response should never return a session token, got: %v", resp["token"])
 	}
-	if _, err := userRepo.GetByUsername(context.Background(), "test_admin"); err != nil {
-		t.Errorf("expected test_admin to be seeded")
+	if resp["password"] != nil {
+		t.Errorf("seed response should never return plaintext passwords, got: %v", resp["password"])
+	}
+
+	// Verify test users seeded with random unguessable passwords
+	creator, err := userRepo.GetByUsername(context.Background(), "test_creator")
+	if err != nil || creator == nil {
+		t.Fatalf("expected test_creator to be seeded")
+	}
+	if auth.CheckPassword("", creator.PasswordHash) || auth.CheckPassword("password", creator.PasswordHash) || auth.CheckPassword("test_creator", creator.PasswordHash) {
+		t.Errorf("fixture password should not match predictable or empty strings")
+	}
+
+	owner, err := userRepo.GetByUsername(context.Background(), "test_owner")
+	if err != nil || owner == nil {
+		t.Fatalf("expected test_owner to be seeded")
+	}
+	if auth.CheckPassword("", owner.PasswordHash) || auth.CheckPassword("password", owner.PasswordHash) || auth.CheckPassword("test_owner", owner.PasswordHash) {
+		t.Errorf("fixture password should not match predictable or empty strings")
+	}
+
+	admin, err := userRepo.GetByUsername(context.Background(), "test_admin")
+	if err != nil || admin == nil {
+		t.Fatalf("expected test_admin to be seeded")
+	}
+	if auth.CheckPassword("", admin.PasswordHash) || auth.CheckPassword("password", admin.PasswordHash) || auth.CheckPassword("test_admin", admin.PasswordHash) {
+		t.Errorf("fixture password should not match predictable or empty strings")
 	}
 }

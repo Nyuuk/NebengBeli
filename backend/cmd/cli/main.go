@@ -13,7 +13,6 @@ import (
 	"github.com/nyuuk/nebengbeli/internal/auth"
 	"github.com/nyuuk/nebengbeli/internal/config"
 	"github.com/nyuuk/nebengbeli/internal/database"
-	"github.com/nyuuk/nebengbeli/internal/handler"
 	"github.com/nyuuk/nebengbeli/internal/model"
 	"github.com/nyuuk/nebengbeli/internal/repository"
 )
@@ -32,7 +31,6 @@ Available Commands:
   wallets                  List all wallets with balance and owner status
   audit-logs               View recent system audit logs
   inspect-wallet           Inspect specific wallet statement and details
-  dev-session              Generate valid JWT token for test fixture personas (local/dev only)
   seed-fixtures            Seed predictable local fixtures for testing (local/dev only)
 
 Flags for create-admin:
@@ -42,11 +40,6 @@ Flags for create-admin:
 Flags for reset-password:
   --username <username>    Target username
   --password <password>    New password
-
-Flags for dev-session:
-  --persona <persona>      Fixture persona: creator | owner | admin
-  --username <username>    Fixture username: test_creator | test_owner | test_admin
-  --role <role>            Optional role verification matching fixed fixture role
 
 Flags for seed-fixtures:
   --scenario <name>        Scenario: standard | empty | linked (default: standard)
@@ -269,64 +262,6 @@ func main() {
 				e.OccurredAt.Format(time.RFC3339), e.Type, e.Amount, e.RunningBalance, e.ItemName, e.Note, e.CreatedByUsername)
 		}
 		w.Flush()
-
-	case "dev-session":
-		if !cfg.EnableDevEndpoints {
-			log.Fatalf("dev-session command is disabled (requires local development environment and ENABLE_DEV_ENDPOINTS=true)")
-		}
-
-		fs := flag.NewFlagSet("dev-session", flag.ExitOnError)
-		username := fs.String("username", "", "Target fixture username (test_creator, test_owner, test_admin)")
-		persona := fs.String("persona", "", "Target fixture persona (creator, owner, admin)")
-		roleStr := fs.String("role", "", "Optional role verification")
-		_ = fs.Parse(os.Args[2:])
-
-		targetUsername := *username
-		if *persona != "" {
-			pName, ok := handler.PredefinedFixturePersonas[*persona]
-			if !ok {
-				log.Fatalf("Error: invalid fixture persona. Allowed: creator, owner, admin")
-			}
-			targetUsername = pName
-		}
-
-		if targetUsername == "" {
-			fmt.Println("Error: --username or --persona is required (allowed: test_creator, test_owner, test_admin)")
-			fs.Usage()
-			os.Exit(1)
-		}
-
-		expectedRole, ok := handler.PredefinedFixtureRoles[targetUsername]
-		if !ok {
-			log.Fatalf("Error: arbitrary usernames not allowed for dev-session. Must be one of: test_creator, test_owner, test_admin")
-		}
-
-		if *roleStr != "" && *roleStr != string(expectedRole) {
-			log.Fatalf("Error: cannot select or override role for fixture user %s (fixed role: %s)", targetUsername, expectedRole)
-		}
-
-		user, err := userRepo.GetByUsername(ctx, targetUsername)
-		if err != nil {
-			// Provision predefined fixture user with immutable predefined role
-			hash, _ := auth.HashPassword(uuid.New().String())
-			user = &model.User{
-				Username:     targetUsername,
-				PasswordHash: hash,
-				Role:         expectedRole,
-				TokenVersion: 1,
-			}
-			if err := userRepo.Create(ctx, user); err != nil {
-				log.Fatalf("Failed creating dev fixture user: %v", err)
-			}
-		}
-
-		jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
-		token, err := jwtMgr.GenerateToken(user)
-		if err != nil {
-			log.Fatalf("Failed generating token: %v", err)
-		}
-
-		fmt.Printf("%s\n", token)
 
 	case "seed-fixtures":
 		if !cfg.EnableDevEndpoints {
