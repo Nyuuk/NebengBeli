@@ -19,6 +19,8 @@ type Config struct {
 
 	RateLimitAuth int // req/min
 	RateLimitAPI  int // req/min
+
+	EnableDevEndpoints bool
 }
 
 func LoadConfig() *Config {
@@ -61,6 +63,12 @@ func LoadConfig() *Config {
 		rlAPI = 120
 	}
 
+	enableDevEndpoints := false
+	if env == "development" || env == "local" || env == "dev" {
+		devEnvStr := os.Getenv("ENABLE_DEV_ENDPOINTS")
+		enableDevEndpoints = devEnvStr == "true" || devEnvStr == "1"
+	}
+
 	return &Config{
 		Port:               port,
 		DatabaseURL:        dbURL,
@@ -73,6 +81,8 @@ func LoadConfig() *Config {
 
 		RateLimitAuth: rlAuth,
 		RateLimitAPI:  rlAPI,
+
+		EnableDevEndpoints: enableDevEndpoints,
 	}
 }
 

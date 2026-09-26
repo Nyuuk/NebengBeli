@@ -31,6 +31,8 @@ Available Commands:
   wallets                  List all wallets with balance and owner status
   audit-logs               View recent system audit logs
   inspect-wallet           Inspect specific wallet statement and details
+  dev-session              Generate valid JWT token for test automation (local/dev only)
+  seed-fixtures            Seed predictable local fixtures for testing (local/dev only)
 
 Flags for create-admin:
   --username <username>    Admin username (required)
@@ -39,6 +41,13 @@ Flags for create-admin:
 Flags for reset-password:
   --username <username>    Target username
   --password <password>    New password
+
+Flags for dev-session:
+  --username <username>    Username (required)
+  --role <role>            User role: user | admin (default: user)
+
+Flags for seed-fixtures:
+  --scenario <name>        Scenario: standard | empty | linked (default: standard)
 
 Flags for audit-logs:
   --limit <n>              Number of logs to retrieve (default: 20)
@@ -258,6 +267,106 @@ func main() {
 				e.OccurredAt.Format(time.RFC3339), e.Type, e.Amount, e.RunningBalance, e.ItemName, e.Note, e.CreatedByUsername)
 		}
 		w.Flush()
+
+	case "dev-session":
+		if !cfg.EnableDevEndpoints {
+			log.Fatalf("dev-session command is disabled (requires local development environment and ENABLE_DEV_ENDPOINTS=true)")
+		}
+
+		fs := flag.NewFlagSet("dev-session", flag.ExitOnError)
+		username := fs.String("username", "", "Target username")
+		roleStr := fs.String("role", "user", "User role (user/admin)")
+		_ = fs.Parse(os.Args[2:])
+
+		if *username == "" {
+			fmt.Println("Error: --username is required")
+			fs.Usage()
+			os.Exit(1)
+		}
+
+		role := model.RoleUser
+		if *roleStr == "admin" {
+			role = model.RoleAdmin
+		}
+
+		user, err := userRepo.GetByUsername(ctx, *username)
+		if err != nil {
+			// Create user
+			hash, _ := auth.HashPassword(uuid.New().String())
+			user = &model.User{
+				Username:     *username,
+				PasswordHash: hash,
+				Role:         role,
+				TokenVersion: 1,
+			}
+			if err := userRepo.Create(ctx, user); err != nil {
+				log.Fatalf("Failed creating user: %v", err)
+			}
+		}
+
+		jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+		token, err := jwtMgr.GenerateToken(user)
+		if err != nil {
+			log.Fatalf("Failed generating token: %v", err)
+		}
+
+		fmt.Printf("%s\n", token)
+
+	case "seed-fixtures":
+		if !cfg.EnableDevEndpoints {
+			log.Fatalf("seed-fixtures command is disabled (requires local development environment and ENABLE_DEV_ENDPOINTS=true)")
+		}
+
+		fs := flag.NewFlagSet("seed-fixtures", flag.ExitOnError)
+		scenario := fs.String("scenario", "standard", "Scenario (standard/empty/linked)")
+		_ = fs.Parse(os.Args[2:])
+
+		createUser := func(uname string, r model.UserRole) *model.User {
+			u, err := userRepo.GetByUsername(ctx, uname)
+			if err == nil && u != nil {
+				return u
+			}
+			hash, _ := auth.HashPassword(uuid.New().String())
+			newUser := &model.User{
+				Username:     uname,
+				PasswordHash: hash,
+				Role:         r,
+				TokenVersion: 1,
+			}
+			_ = userRepo.Create(ctx, newUser)
+			return newUser
+		}
+
+		creator := createUser("test_creator", model.RoleUser)
+		owner := createUser("test_owner", model.RoleUser)
+		_ = createUser("test_admin", model.RoleAdmin)
+
+		if *scenario == "standard" || *scenario == "linked" {
+			wallet := &model.Wallet{
+				Name:      "Buku Makan Siang",
+				CreatorID: creator.ID,
+			}
+			if err := walletRepo.Create(ctx, wallet); err == nil {
+				if *scenario == "standard" {
+					entry1 := &model.Entry{
+						ClientID:   uuid.New(),
+						WalletID:   wallet.ID,
+						Type:       model.EntryTypeTitipan,
+						Amount:     50000,
+						ItemName:   "Nasi Padang",
+						Note:       "Makan siang bersama",
+						OccurredAt: time.Now().Add(-2 * time.Hour),
+						CreatedBy:  creator.ID,
+					}
+					_, _, _ = entryRepo.Create(ctx, entry1)
+				}
+				if *scenario == "linked" {
+					_ = walletRepo.SetOwner(ctx, wallet.ID, owner.ID)
+				}
+			}
+		}
+
+		fmt.Printf("Fixtures for scenario '%s' seeded successfully.\n", *scenario)
 
 	default:
 		fmt.Printf("Unknown command '%s'\n\n", command)

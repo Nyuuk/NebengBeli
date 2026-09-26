@@ -21,11 +21,16 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js').catch(err => {
+        const registerSW = () => {
+          navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(err => {
             console.log('SW registration failed: ', err);
           });
-        });
+        };
+        if (document.readyState === 'complete') {
+          registerSW();
+        } else {
+          window.addEventListener('load', registerSW);
+        }
       }
     </script>
   </body>

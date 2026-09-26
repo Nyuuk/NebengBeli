@@ -77,6 +77,39 @@ Frontend development server runs on `http://localhost:5173` with proxy forwardin
 
 ---
 
+## Secure Context & PWA Local Setup
+
+NebengBeli is built as an offline-capable Progressive Web Application (PWA). Under W3C Secure Context specifications:
+
+1. **Localhost Development as Secure Context**:
+   - Modern browsers treat `http://localhost` and `http://127.0.0.1` as **Potentially Trustworthy Origins** (Secure Contexts).
+   - The Service Worker (`/service-worker.js`), Web App Manifest (`/manifest.json`), IndexedDB offline transaction queue, and Web Crypto APIs function natively when accessed via `http://localhost:5173` (Vite dev server) or `http://localhost` (Docker Nginx reverse proxy).
+   - In accordance with web standards, Service Workers cannot be registered from `file://` URLs.
+
+2. **Mobile / Remote Device Testing**:
+   - To test PWA installation on physical mobile devices over USB without installing self-signed TLS certificates, use Android reverse port forwarding:
+     ```bash
+     adb reverse tcp:5173 tcp:5173
+     # Access http://localhost:5173 on the mobile device browser
+     ```
+   - In production environments, HTTPS with valid TLS certificates must be terminated at the reverse proxy or ingress.
+
+---
+
+## Developer Fixture Endpoints & Automated Testing
+
+For end-to-end and integration test automation:
+- Dev endpoints (`/api/dev/*`) **fail closed by default** across all environments.
+- They can only be enabled for local development by explicitly exporting `ENABLE_DEV_ENDPOINTS=true` in a `development` or `local` environment:
+  ```bash
+  export ENVIRONMENT=development
+  export ENABLE_DEV_ENDPOINTS=true
+  go run ./backend/cmd/server/main.go
+  ```
+- Dev endpoints are strictly locked out in `production` and `staging` environments regardless of environment variable values.
+
+---
+
 ## Admin CLI Usage
 
 The repository includes a dedicated CLI binary in `backend/cmd/cli`:

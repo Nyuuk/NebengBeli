@@ -62,6 +62,7 @@ func main() {
 	stmtHandler := handler.NewStatementHandler(stmtSvc)
 	linkHandler := handler.NewLinkRequestHandler(linkSvc)
 	adminHandler := handler.NewAdminHandler(userRepo, walletRepo, entryRepo, auditRepo, authSvc)
+	devHandler := handler.NewDevHandler(db, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
 	healthHandler := handler.NewHealthHandler(db)
 
 	// 6. Rate Limiters
@@ -143,6 +144,17 @@ func main() {
 				admin.GET("/wallets", adminHandler.ListWallets)
 				admin.GET("/audit-logs", adminHandler.ListAuditLogs)
 				admin.GET("/stats", adminHandler.GetStats)
+			}
+		}
+
+		// Local-only dev fixture/session endpoints (never exposed in production)
+		if cfg.EnableDevEndpoints {
+			dev := api.Group("/dev")
+			{
+				dev.GET("/status", devHandler.Status)
+				dev.POST("/session", devHandler.CreateSession)
+				dev.POST("/fixtures/reset", devHandler.ResetFixtures)
+				dev.POST("/fixtures/seed", devHandler.SeedFixtures)
 			}
 		}
 	}

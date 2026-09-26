@@ -4,13 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/nyuuk/nebengbeli/internal/auth"
+	"github.com/nyuuk/nebengbeli/internal/config"
+	"github.com/nyuuk/nebengbeli/internal/handler"
+	"github.com/nyuuk/nebengbeli/internal/middleware"
 	"github.com/nyuuk/nebengbeli/internal/model"
 	"github.com/nyuuk/nebengbeli/internal/repository"
 	"github.com/nyuuk/nebengbeli/internal/service"
@@ -147,6 +154,80 @@ func (m *mockAuditRepo) List(ctx context.Context, filter repository.AuditLogFilt
 
 func (m *mockAuditRepo) Count(ctx context.Context) (int64, error) {
 	return 0, nil
+}
+
+type mockUserRepo struct {
+	users     map[string]*model.User
+	usersByID map[uuid.UUID]*model.User
+}
+
+func (m *mockUserRepo) Create(ctx context.Context, user *model.User) error {
+	if user.ID == uuid.Nil {
+		user.ID = uuid.New()
+	}
+	user.CreatedAt = time.Now()
+	m.users[user.Username] = user
+	m.usersByID[user.ID] = user
+	return nil
+}
+
+func (m *mockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
+	if u, ok := m.usersByID[id]; ok {
+		return u, nil
+	}
+	return nil, repository.ErrUserNotFound
+}
+
+func (m *mockUserRepo) GetByUsername(ctx context.Context, username string) (*model.User, error) {
+	if u, ok := m.users[username]; ok {
+		return u, nil
+	}
+	return nil, repository.ErrUserNotFound
+}
+
+func (m *mockUserRepo) IncrementTokenVersion(ctx context.Context, id uuid.UUID) (int, error) {
+	if u, ok := m.usersByID[id]; ok {
+		u.TokenVersion++
+		return u.TokenVersion, nil
+	}
+	return 0, repository.ErrUserNotFound
+}
+
+func (m *mockUserRepo) UpdatePassword(ctx context.Context, id uuid.UUID, newPasswordHash string) error {
+	if u, ok := m.usersByID[id]; ok {
+		u.PasswordHash = newPasswordHash
+		u.TokenVersion++
+		return nil
+	}
+	return repository.ErrUserNotFound
+}
+
+func (m *mockUserRepo) List(ctx context.Context, limit, offset int) ([]model.User, int64, error) {
+	res := make([]model.User, 0)
+	for _, u := range m.usersByID {
+		res = append(res, *u)
+	}
+	return res, int64(len(res)), nil
+}
+
+func (m *mockUserRepo) Count(ctx context.Context) (int64, error) {
+	return int64(len(m.usersByID)), nil
+}
+
+type mockLinkRepo struct{}
+
+func (m *mockLinkRepo) Create(ctx context.Context, req *model.LinkRequest) error { return nil }
+func (m *mockLinkRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.LinkRequest, error) {
+	return nil, nil
+}
+func (m *mockLinkRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status model.LinkRequestStatus) error {
+	return nil
+}
+func (m *mockLinkRepo) ListForUser(ctx context.Context, userID uuid.UUID) ([]model.LinkRequest, error) {
+	return nil, nil
+}
+func (m *mockLinkRepo) ListByWallet(ctx context.Context, walletID uuid.UUID) ([]model.LinkRequest, error) {
+	return nil, nil
 }
 
 func TestStatementResponseEmptyEntriesNormalized(t *testing.T) {
@@ -300,5 +381,215 @@ func TestServiceWorkerFilesExist(t *testing.T) {
 	}
 	if !bytes.Contains(content, []byte("addEventListener('fetch'")) {
 		t.Errorf("service-worker.js missing fetch event listener")
+	}
+}
+
+func TestManifestJsonStructure(t *testing.T) {
+	manifestPath := filepath.Join("..", "..", "frontend", "public", "manifest.json")
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		manifestPath = filepath.Join("frontend", "public", "manifest.json")
+		content, err = os.ReadFile(manifestPath)
+		if err != nil {
+			t.Fatalf("failed to read manifest.json: %v", err)
+		}
+	}
+
+	var manifest map[string]interface{}
+	if err := json.Unmarshal(content, &manifest); err != nil {
+		t.Fatalf("manifest.json is not valid JSON: %v", err)
+	}
+
+	if manifest["name"] == "" || manifest["short_name"] == "" {
+		t.Errorf("manifest.json missing name or short_name")
+	}
+	if manifest["display"] != "standalone" {
+		t.Errorf("expected display standalone, got %v", manifest["display"])
+	}
+	if manifest["start_url"] != "/" {
+		t.Errorf("expected start_url '/', got %v", manifest["start_url"])
+	}
+}
+
+func TestDevEndpointsDisabledInProduction(t *testing.T) {
+	cfg := &config.Config{
+		Environment:        "production",
+		EnableDevEndpoints: false,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
+
+	r := gin.New()
+	api := r.Group("/api")
+	if cfg.EnableDevEndpoints {
+		dev := api.Group("/dev")
+		{
+			dev.GET("/status", devHandler.Status)
+			dev.POST("/session", devHandler.CreateSession)
+			dev.POST("/fixtures/reset", devHandler.ResetFixtures)
+			dev.POST("/fixtures/seed", devHandler.SeedFixtures)
+		}
+	}
+
+	// 1. Check status endpoint is 404 in production
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/dev/status", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for /api/dev/status in production, got %d", w.Code)
+	}
+
+	// 2. Check session creation is 404 in production
+	body := `{"username":"test_creator","role":"user"}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for /api/dev/session in production, got %d", w.Code)
+	}
+}
+
+func TestDevSessionCreationAndAuth(t *testing.T) {
+	cfg := &config.Config{
+		Environment:        "development",
+		EnableDevEndpoints: true,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+	authSvc := service.NewAuthService(userRepo, auditRepo, jwtMgr)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
+
+	r := gin.New()
+	api := r.Group("/api")
+	if cfg.EnableDevEndpoints {
+		dev := api.Group("/dev")
+		{
+			dev.GET("/status", devHandler.Status)
+			dev.POST("/session", devHandler.CreateSession)
+		}
+	}
+
+	authRequired := api.Group("")
+	authRequired.Use(middleware.AuthMiddleware(jwtMgr, authSvc))
+	authRequired.GET("/auth/me", func(c *gin.Context) {
+		u, _ := middleware.GetCurrentUser(c)
+		c.JSON(http.StatusOK, gin.H{"user": u.ToResponse()})
+	})
+
+	// 1. Create Dev Session for user
+	sessionPayload := `{"username":"dev_creator","role":"user"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(sessionPayload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 from dev session, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var sessionResp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &sessionResp); err != nil {
+		t.Fatalf("failed to unmarshal session response: %v", err)
+	}
+
+	token, ok := sessionResp["token"].(string)
+	if !ok || token == "" {
+		t.Fatalf("expected valid token in session response")
+	}
+
+	// 2. Use the token to access protected endpoint
+	wAuth := httptest.NewRecorder()
+	reqAuth, _ := http.NewRequest("GET", "/api/auth/me", nil)
+	reqAuth.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(wAuth, reqAuth)
+
+	if wAuth.Code != http.StatusOK {
+		t.Fatalf("expected status 200 from protected endpoint with dev token, got %d: %s", wAuth.Code, wAuth.Body.String())
+	}
+
+	var meResp map[string]interface{}
+	if err := json.Unmarshal(wAuth.Body.Bytes(), &meResp); err != nil {
+		t.Fatalf("failed to unmarshal me response: %v", err)
+	}
+
+	userData, _ := meResp["user"].(map[string]interface{})
+	if userData["username"] != "dev_creator" {
+		t.Errorf("expected username dev_creator, got %v", userData["username"])
+	}
+}
+
+func TestConfigDevEndpointsFailClosed(t *testing.T) {
+	// Scenario 1: Development with no ENABLE_DEV_ENDPOINTS set -> must be false (fail-closed)
+	os.Setenv("ENVIRONMENT", "development")
+	os.Unsetenv("ENABLE_DEV_ENDPOINTS")
+	cfg := config.LoadConfig()
+	if cfg.EnableDevEndpoints {
+		t.Errorf("expected EnableDevEndpoints to be false by default in development, got true")
+	}
+
+	// Scenario 2: Staging with ENABLE_DEV_ENDPOINTS=true -> must be false (only local dev allowed)
+	os.Setenv("ENVIRONMENT", "staging")
+	os.Setenv("ENABLE_DEV_ENDPOINTS", "true")
+	cfg = config.LoadConfig()
+	if cfg.EnableDevEndpoints {
+		t.Errorf("expected EnableDevEndpoints to be false in staging even when ENABLE_DEV_ENDPOINTS=true, got true")
+	}
+
+	// Scenario 3: Production with ENABLE_DEV_ENDPOINTS=true -> must be false
+	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("ENABLE_DEV_ENDPOINTS", "true")
+	cfg = config.LoadConfig()
+	if cfg.EnableDevEndpoints {
+		t.Errorf("expected EnableDevEndpoints to be false in production, got true")
+	}
+
+	// Scenario 4: Local development with ENABLE_DEV_ENDPOINTS=true -> explicitly enabled
+	os.Setenv("ENVIRONMENT", "development")
+	os.Setenv("ENABLE_DEV_ENDPOINTS", "true")
+	cfg = config.LoadConfig()
+	if !cfg.EnableDevEndpoints {
+		t.Errorf("expected EnableDevEndpoints to be true in development when explicitly set to true, got false")
+	}
+
+	// Cleanup
+	os.Unsetenv("ENABLE_DEV_ENDPOINTS")
+	os.Setenv("ENVIRONMENT", "development")
+}
+
+func TestIndexHtmlServiceWorkerDoesNotRegisterOnFileProtocol(t *testing.T) {
+	indexPath := filepath.Join("..", "..", "frontend", "index.html")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		indexPath = filepath.Join("frontend", "index.html")
+		content, err = os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatalf("failed to read frontend/index.html: %v", err)
+		}
+	}
+
+	contentStr := string(content)
+	if strings.Contains(contentStr, "file:") {
+		t.Errorf("frontend/index.html should not contain file: protocol condition for service worker registration")
+	}
+	if !strings.Contains(contentStr, "navigator.serviceWorker.register") {
+		t.Errorf("frontend/index.html missing navigator.serviceWorker.register")
 	}
 }
