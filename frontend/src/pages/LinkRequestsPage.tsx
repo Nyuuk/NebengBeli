@@ -36,7 +36,7 @@ export const LinkRequestsPage: React.FC = () => {
     try {
       setLoading(true);
       const list = await listLinkRequestsApi();
-      setRequests(list);
+      setRequests(list || []);
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal memuat daftar permintaan tautan.');

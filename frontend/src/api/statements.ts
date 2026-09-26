@@ -22,7 +22,12 @@ export async function getStatementApi(
 
   const qs = searchParams.toString();
   const path = `/api/wallets/${walletId}/statement${qs ? `?${qs}` : ''}`;
-  return request<StatementResponse>(path);
+  const resp = await request<StatementResponse>(path);
+  return {
+    ...resp,
+    entries: resp?.entries || [],
+    total: resp?.total ?? 0,
+  };
 }
 
 export function getExportCSVUrl(walletId: string, params: StatementFilterParams = {}): string {

@@ -93,8 +93,10 @@ export const WalletDetailPage: React.FC = () => {
       }));
 
       // Merge pending offline entries at the top
-      setEntries([...pendingEntries, ...stmt.entries]);
-      setTotalEntries(stmt.total + pendingEntries.length);
+      const stmtEntries = stmt?.entries || [];
+      const stmtTotal = stmt?.total ?? 0;
+      setEntries([...pendingEntries, ...stmtEntries]);
+      setTotalEntries(stmtTotal + pendingEntries.length);
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal memuat data buku ledger.');

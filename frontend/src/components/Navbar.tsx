@@ -15,9 +15,11 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LinkIcon from '@mui/icons-material/Link';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useOnlineStatus } from '../context/OnlineStatusContext';
 
 export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
+  const { pendingCount } = useOnlineStatus();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
@@ -31,6 +33,12 @@ export const Navbar: React.FC = () => {
 
   const handleLogout = async () => {
     handleMenuClose();
+    if (pendingCount > 0) {
+      const confirmLogout = window.confirm(
+        `Anda memiliki ${pendingCount} transaksi dalam antrean offline yang belum tersinkronisasi. Yakin ingin keluar?`
+      );
+      if (!confirmLogout) return;
+    }
     await logout();
     navigate('/login');
   };

@@ -46,7 +46,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
       setLoadingWallets(true);
       getWalletsApi(false)
         .then((list) => {
-          const validWallets = list.filter((w) => w.id !== sourceWalletId && !w.is_archived);
+          const validWallets = (list || []).filter((w) => w.id !== sourceWalletId && !w.is_archived);
           setWallets(validWallets);
           if (validWallets.length > 0) {
             setSelectedWalletId(validWallets[0].id);

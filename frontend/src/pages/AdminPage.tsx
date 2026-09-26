@@ -67,14 +67,14 @@ export const AdminPage: React.FC = () => {
           adminGetStatsApi(),
           adminListUsersApi(50, 0),
         ]);
-        setStats(statsData.stats);
-        setUsers(usersData.users);
+        setStats(statsData?.stats || null);
+        setUsers(usersData?.users || []);
       } else if (tab === 1) {
         const walletsData = await adminListWalletsApi(50, 0);
-        setWallets(walletsData.wallets);
+        setWallets(walletsData?.wallets || []);
       } else if (tab === 2) {
         const auditsData = await adminListAuditLogsApi({ limit: 50, offset: 0 });
-        setAuditLogs(auditsData.audit_logs);
+        setAuditLogs(auditsData?.audit_logs || []);
       }
     } catch (err: unknown) {
       const apiErr = err as { message?: string };

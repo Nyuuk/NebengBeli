@@ -59,6 +59,10 @@ func (s *statementService) GetStatement(ctx context.Context, walletID, userID uu
 		return nil, err
 	}
 
+	if entries == nil {
+		entries = make([]model.Entry, 0)
+	}
+
 	page := 1
 	if filter.Limit > 0 && filter.Offset > 0 {
 		page = (filter.Offset / filter.Limit) + 1
