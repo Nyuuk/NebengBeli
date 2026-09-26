@@ -13,6 +13,7 @@ import (
 	"github.com/nyuuk/nebengbeli/internal/auth"
 	"github.com/nyuuk/nebengbeli/internal/config"
 	"github.com/nyuuk/nebengbeli/internal/database"
+	"github.com/nyuuk/nebengbeli/internal/handler"
 	"github.com/nyuuk/nebengbeli/internal/model"
 	"github.com/nyuuk/nebengbeli/internal/repository"
 )
@@ -31,7 +32,7 @@ Available Commands:
   wallets                  List all wallets with balance and owner status
   audit-logs               View recent system audit logs
   inspect-wallet           Inspect specific wallet statement and details
-  dev-session              Generate valid JWT token for test automation (local/dev only)
+  dev-session              Generate valid JWT token for test fixture personas (local/dev only)
   seed-fixtures            Seed predictable local fixtures for testing (local/dev only)
 
 Flags for create-admin:
@@ -43,8 +44,9 @@ Flags for reset-password:
   --password <password>    New password
 
 Flags for dev-session:
-  --username <username>    Username (required)
-  --role <role>            User role: user | admin (default: user)
+  --persona <persona>      Fixture persona: creator | owner | admin
+  --username <username>    Fixture username: test_creator | test_owner | test_admin
+  --role <role>            Optional role verification matching fixed fixture role
 
 Flags for seed-fixtures:
   --scenario <name>        Scenario: standard | empty | linked (default: standard)
@@ -274,33 +276,47 @@ func main() {
 		}
 
 		fs := flag.NewFlagSet("dev-session", flag.ExitOnError)
-		username := fs.String("username", "", "Target username")
-		roleStr := fs.String("role", "user", "User role (user/admin)")
+		username := fs.String("username", "", "Target fixture username (test_creator, test_owner, test_admin)")
+		persona := fs.String("persona", "", "Target fixture persona (creator, owner, admin)")
+		roleStr := fs.String("role", "", "Optional role verification")
 		_ = fs.Parse(os.Args[2:])
 
-		if *username == "" {
-			fmt.Println("Error: --username is required")
+		targetUsername := *username
+		if *persona != "" {
+			pName, ok := handler.PredefinedFixturePersonas[*persona]
+			if !ok {
+				log.Fatalf("Error: invalid fixture persona. Allowed: creator, owner, admin")
+			}
+			targetUsername = pName
+		}
+
+		if targetUsername == "" {
+			fmt.Println("Error: --username or --persona is required (allowed: test_creator, test_owner, test_admin)")
 			fs.Usage()
 			os.Exit(1)
 		}
 
-		role := model.RoleUser
-		if *roleStr == "admin" {
-			role = model.RoleAdmin
+		expectedRole, ok := handler.PredefinedFixtureRoles[targetUsername]
+		if !ok {
+			log.Fatalf("Error: arbitrary usernames not allowed for dev-session. Must be one of: test_creator, test_owner, test_admin")
 		}
 
-		user, err := userRepo.GetByUsername(ctx, *username)
+		if *roleStr != "" && *roleStr != string(expectedRole) {
+			log.Fatalf("Error: cannot select or override role for fixture user %s (fixed role: %s)", targetUsername, expectedRole)
+		}
+
+		user, err := userRepo.GetByUsername(ctx, targetUsername)
 		if err != nil {
-			// Create user
+			// Provision predefined fixture user with immutable predefined role
 			hash, _ := auth.HashPassword(uuid.New().String())
 			user = &model.User{
-				Username:     *username,
+				Username:     targetUsername,
 				PasswordHash: hash,
-				Role:         role,
+				Role:         expectedRole,
 				TokenVersion: 1,
 			}
 			if err := userRepo.Create(ctx, user); err != nil {
-				log.Fatalf("Failed creating user: %v", err)
+				log.Fatalf("Failed creating dev fixture user: %v", err)
 			}
 		}
 

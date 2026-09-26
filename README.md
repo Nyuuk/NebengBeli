@@ -87,21 +87,31 @@ NebengBeli is built as an offline-capable Progressive Web Application (PWA). Und
    - Modern browsers treat loopback origins (`http://localhost`, `http://127.0.0.1`, `http://[::1]`) as **Potentially Trustworthy Origins** (Secure Contexts) natively over plain HTTP.
    - The Service Worker (`/service-worker.js`), Web App Manifest (`/manifest.json`), IndexedDB offline transaction queue, and Web Crypto APIs function natively when accessed via:
      - `http://localhost:5173` (Vite frontend dev server)
-     - `http://localhost` or `http://localhost:8088` (Docker Compose HTTP)
-   - In accordance with web standards, Service Workers cannot be registered from `file://` URLs.
+     - `http://localhost` or `http://localhost:8088` (Docker Compose HTTP accessed from the host)
+   - In accordance with web standards, Service Workers cannot be registered from `file://` URLs or insecure non-loopback HTTP origins.
 
-2. **Non-Loopback Origins & Limitations of Self-Signed Certificates**:
-   - Accessing raw non-loopback IP addresses (e.g. `http://192.168.x.x` or `http://172.x.x.x`) over plain HTTP is rejected by browsers as an insecure context.
-   - Self-signed TLS certificates are **not trusted** by native browsers and cannot be accepted via insecure bypass; browsers block Service Worker and PWA capabilities on untrusted HTTPS origins unless a custom root CA is explicitly imported into the system/browser trust store.
-   - For containerized or headless test runners across network boundaries, route traffic through `localhost` port forwarding or host networking so the browser evaluates the origin as a loopback secure context.
+2. **Containerized Browser Topology (Camofox Bridge Rewriting) & Honest Architectural Constraints**:
+   - When a browser agent runs inside an isolated Docker container, navigating to `localhost` causes the container engine to rewrite the host address to the Docker bridge gateway (e.g. `http://172.17.0.1:8088`).
+   - Because `172.17.0.1` is a plain HTTP non-loopback IP address, native browsers strictly evaluate `window.isSecureContext === false` and disable Service Worker APIs.
+   - **Prohibited Workarounds**: Insecure browser flags (e.g., `--ignore-certificate-errors`, `--unsafely-treat-insecure-origin-as-secure`) and untrusted self-signed TLS certificates are strictly prohibited in production and compliance testing because they violate standards and produce browser TLS rejection errors.
+   - **Standards-Compliant Local Solutions**:
+     - **Option A (Preserve Loopback with Host Networking)**: Run the browser container with `--network host` so that `localhost:8088` directly resolves to `127.0.0.1`, preserving the loopback Potentially Trustworthy Origin natively.
+     - **Option B (Trusted Local TLS with mkcert)**:
+       1. Install a local root Certificate Authority into the host and browser trust stores:
+          ```bash
+          mkcert -install
+          ```
+       2. Generate trusted certificates covering all required SANs (including loopback and bridge IPs):
+          ```bash
+          mkdir -p certs
+          mkcert -cert-file certs/cert.pem -key-file certs/key.pem localhost 127.0.0.1 172.17.0.1 ::1
+          ```
+       3. Mount `./certs:/etc/nginx/certs:ro` into the frontend container and configure Nginx TLS listener on port 443/8443.
+       4. Access `https://localhost:8443` or `https://172.17.0.1:8443`. The native browser will establish trusted TLS without security warnings or disabled APIs.
+     - **Honest Scaffolding**: If the test runner environment does not allow installing a custom root CA into the container's NSS trust store or enabling host networking, plain HTTP across bridge `172.17.0.1` cannot be made a secure context under W3C specifications without external trusted infrastructure.
 
-3. **Mobile / Remote Device Testing**:
-   - To test PWA installation on physical mobile devices over USB without custom CA certificate installation, use Android reverse port forwarding:
-     ```bash
-     adb reverse tcp:5173 tcp:5173
-     # Access http://localhost:5173 on the mobile device browser
-     ```
-   - In production environments, terminate HTTPS with valid TLS certificates issued by a trusted Certificate Authority (e.g., Let's Encrypt / reverse proxy).
+3. **Production Deployments**:
+   - In production environments, terminate HTTPS with valid TLS certificates issued by an accredited public Certificate Authority (e.g., Let's Encrypt / automated ACME proxy) and set `COOKIE_SECURE=true`.
 
 ---
 
@@ -120,8 +130,10 @@ For end-to-end and integration test automation:
   ENVIRONMENT=development ENABLE_DEV_ENDPOINTS=true docker compose up -d
   ```
 - Dev endpoints are strictly locked out in `production` and `staging` environments regardless of environment variable values.
-- Available dev endpoints:
-  - `POST /api/dev/session`: Issue authenticated JWT cookie and token for a username (e.g. `{"username": "test_creator", "role": "user"}`) without entering raw passwords.
+- **Fail-Closed Fixture Policy**:
+  - `POST /api/dev/session`: Only issues session tokens for strictly predefined fixture personas (`creator`, `owner`, `admin`) or predefined fixture usernames (`test_creator`, `test_owner`, `test_admin`).
+  - Arbitrary username creation and arbitrary role selection/escalation are strictly forbidden and rejected with `403 Forbidden`.
+  - Roles are immutable and defined by the fixture specification (`test_creator` is `user`, `test_owner` is `user`, `test_admin` is `admin`).
   - `POST /api/dev/fixtures/seed`: Seed predictable scenario data (`"standard"`, `"empty"`, `"linked"`).
   - `POST /api/dev/fixtures/reset`: Safely wipe test data from database tables in local development.
 

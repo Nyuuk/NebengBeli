@@ -494,15 +494,15 @@ func TestDevSessionCreationAndAuth(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"user": u.ToResponse()})
 	})
 
-	// 1. Create Dev Session for user
-	sessionPayload := `{"username":"dev_creator","role":"user"}`
+	// 1. Create Dev Session for predefined test_creator
+	sessionPayload := `{"username":"test_creator"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(sessionPayload))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200 from dev session, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected status 200 from dev session for test_creator, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var sessionResp map[string]interface{}
@@ -531,8 +531,11 @@ func TestDevSessionCreationAndAuth(t *testing.T) {
 	}
 
 	userData, _ := meResp["user"].(map[string]interface{})
-	if userData["username"] != "dev_creator" {
-		t.Errorf("expected username dev_creator, got %v", userData["username"])
+	if userData["username"] != "test_creator" {
+		t.Errorf("expected username test_creator, got %v", userData["username"])
+	}
+	if userData["role"] != "user" {
+		t.Errorf("expected role user, got %v", userData["role"])
 	}
 }
 
@@ -685,7 +688,7 @@ func TestDevHandlerDirectInvocationFailClosed(t *testing.T) {
 	}
 }
 
-func TestDevSessionAdminRoleCreation(t *testing.T) {
+func TestDevSessionArbitraryUsernameRejected(t *testing.T) {
 	cfg := &config.Config{
 		Environment:        "development",
 		EnableDevEndpoints: true,
@@ -708,24 +711,169 @@ func TestDevSessionAdminRoleCreation(t *testing.T) {
 		dev.POST("/session", devHandler.CreateSession)
 	}
 
-	// Create dev admin session
-	body := `{"username":"dev_admin","role":"admin"}`
+	arbitraryUsers := []string{"arbitrary_user", "attacker", "random_victim", "root", "guest"}
+	for _, username := range arbitraryUsers {
+		body := `{"username":"` + username + `"}`
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403 Forbidden when requesting dev session for arbitrary username %s, got %d: %s", username, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestDevSessionRoleSelectionAndEscalationRejected(t *testing.T) {
+	cfg := &config.Config{
+		Environment:        "development",
+		EnableDevEndpoints: true,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
+
+	r := gin.New()
+	dev := r.Group("/api/dev")
+	{
+		dev.POST("/session", devHandler.CreateSession)
+	}
+
+	// 1. Attempt to escalate test_creator to admin role -> must be 403
+	body := `{"username":"test_creator","role":"admin"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for role escalation on test_creator, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 2. Attempt to select arbitrary role on test_admin -> must be 403 if role != admin
+	body = `{"username":"test_admin","role":"user"}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for role mutation on test_admin, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDevSessionAllFixturePersonas(t *testing.T) {
+	cfg := &config.Config{
+		Environment:        "development",
+		EnableDevEndpoints: true,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
+
+	r := gin.New()
+	dev := r.Group("/api/dev")
+	{
+		dev.POST("/session", devHandler.CreateSession)
+	}
+
+	cases := []struct {
+		persona      string
+		expectedUser string
+		expectedRole string
+	}{
+		{"creator", "test_creator", "user"},
+		{"owner", "test_owner", "user"},
+		{"admin", "test_admin", "admin"},
+	}
+
+	for _, c := range cases {
+		body := `{"persona":"` + c.persona + `"}`
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/dev/session", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for persona %s, got %d: %s", c.persona, w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		userResp, ok := resp["user"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("user object missing in response")
+		}
+		if userResp["username"] != c.expectedUser {
+			t.Errorf("expected username %s, got %v", c.expectedUser, userResp["username"])
+		}
+		if userResp["role"] != c.expectedRole {
+			t.Errorf("expected role %s, got %v", c.expectedRole, userResp["role"])
+		}
+	}
+}
+
+func TestDevFixturesSeedHandler(t *testing.T) {
+	cfg := &config.Config{
+		Environment:        "development",
+		EnableDevEndpoints: true,
+		JWTSecret:          "secret-key-32-chars-minimum-length!",
+		JWTExpiry:          1 * time.Hour,
+	}
+
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	linkRepo := &mockLinkRepo{}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+
+	devHandler := handler.NewDevHandler(nil, userRepo, walletRepo, entryRepo, linkRepo, auditRepo, jwtMgr, cfg)
+
+	r := gin.New()
+	dev := r.Group("/api/dev")
+	{
+		dev.POST("/fixtures/seed", devHandler.SeedFixtures)
+	}
+
+	body := `{"scenario":"standard"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/dev/fixtures/seed", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for dev admin session creation, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 200 for seed fixtures, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
+	// Verify test users seeded
+	if _, err := userRepo.GetByUsername(context.Background(), "test_creator"); err != nil {
+		t.Errorf("expected test_creator to be seeded")
 	}
-
-	userResp, ok := resp["user"].(map[string]interface{})
-	if !ok || userResp["role"] != "admin" {
-		t.Errorf("expected user role admin, got %v", userResp["role"])
+	if _, err := userRepo.GetByUsername(context.Background(), "test_owner"); err != nil {
+		t.Errorf("expected test_owner to be seeded")
+	}
+	if _, err := userRepo.GetByUsername(context.Background(), "test_admin"); err != nil {
+		t.Errorf("expected test_admin to be seeded")
 	}
 }

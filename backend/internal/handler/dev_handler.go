@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -49,8 +50,28 @@ func NewDevHandler(
 	}
 }
 
+// Predefined fixture constants and mappings
+const (
+	FixtureCreatorUsername = "test_creator"
+	FixtureOwnerUsername   = "test_owner"
+	FixtureAdminUsername   = "test_admin"
+)
+
+var PredefinedFixtureRoles = map[string]model.UserRole{
+	FixtureCreatorUsername: model.RoleUser,
+	FixtureOwnerUsername:   model.RoleUser,
+	FixtureAdminUsername:   model.RoleAdmin,
+}
+
+var PredefinedFixturePersonas = map[string]string{
+	"creator": FixtureCreatorUsername,
+	"owner":   FixtureOwnerUsername,
+	"admin":   FixtureAdminUsername,
+}
+
 type DevSessionRequest struct {
-	Username string `json:"username" binding:"required,min=2,max=64"`
+	Persona  string `json:"persona"`
+	Username string `json:"username"`
 	Role     string `json:"role"`
 }
 
@@ -80,7 +101,7 @@ func (h *DevHandler) Status(c *gin.Context) {
 	})
 }
 
-// CreateSession generates an authenticated session token & cookie without requiring credentials
+// CreateSession generates an authenticated session token & cookie for strictly predefined fixture personas
 func (h *DevHandler) CreateSession(c *gin.Context) {
 	if !h.isDevAllowed() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "developer endpoints are strictly disabled in this environment"})
@@ -93,15 +114,38 @@ func (h *DevHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	role := model.RoleUser
-	if req.Role == string(model.RoleAdmin) {
-		role = model.RoleAdmin
+	var targetUsername string
+	if req.Persona != "" {
+		pName, ok := PredefinedFixturePersonas[strings.ToLower(req.Persona)]
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fixture persona: must be 'creator', 'owner', or 'admin'"})
+			return
+		}
+		targetUsername = pName
+	} else if req.Username != "" {
+		targetUsername = req.Username
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing fixture identifier: provide 'persona' ('creator', 'owner', 'admin') or 'username' ('test_creator', 'test_owner', 'test_admin')"})
+		return
+	}
+
+	// Strictly validate that the target username is a predefined fixture persona
+	expectedRole, isAllowed := PredefinedFixtureRoles[targetUsername]
+	if !isAllowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: dev session endpoint only permits predefined test fixture personas and strictly rejects arbitrary usernames"})
+		return
+	}
+
+	// Strictly forbid role selection or role escalation
+	if req.Role != "" && req.Role != string(expectedRole) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: role selection and role escalation are disallowed on fixture accounts"})
+		return
 	}
 
 	ctx := c.Request.Context()
-	user, err := h.userRepo.GetByUsername(ctx, req.Username)
+	user, err := h.userRepo.GetByUsername(ctx, targetUsername)
 	if err != nil {
-		// User does not exist, create with a secure random internal password hash
+		// Provision the predefined fixture user with immutable predefined role
 		randomBytes := make([]byte, 16)
 		_, _ = rand.Read(randomBytes)
 		randomSecret := hex.EncodeToString(randomBytes)
@@ -112,23 +156,20 @@ func (h *DevHandler) CreateSession(c *gin.Context) {
 		}
 
 		user = &model.User{
-			Username:     req.Username,
+			Username:     targetUsername,
 			PasswordHash: hash,
-			Role:         role,
+			Role:         expectedRole,
 			TokenVersion: 1,
 		}
 
 		if err := h.userRepo.Create(ctx, user); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create dev test user: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create dev fixture user: " + err.Error()})
 			return
 		}
-	} else if user.Role != role {
-		// Update role if explicitly requested
-		if h.db != nil {
-			query := `UPDATE users SET role = $1 WHERE id = $2`
-			_, _ = h.db.ExecContext(ctx, query, role, user.ID)
-		}
-		user.Role = role
+	} else if user.Role != expectedRole {
+		// Ensure role matches fixture definition without mutating DB dynamically
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database state mismatch: fixture user role does not match predefined specification"})
+		return
 	}
 
 	token, err := h.jwtMgr.GenerateToken(user)
