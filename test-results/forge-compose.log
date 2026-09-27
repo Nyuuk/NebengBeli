@@ -1,0 +1,65 @@
+NAME                  IMAGE                 COMMAND                  SERVICE    CREATED              STATUS                   PORTS
+nebengbeli-backend    nebengbeli-backend    "/app/nebengbeli-ser…"   backend    2 minutes ago        Up 2 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+nebengbeli-frontend   nebengbeli-frontend   "/docker-entrypoint.…"   frontend   About a minute ago   Up About a minute        0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+nebengbeli-postgres   postgres:15-alpine    "docker-entrypoint.s…"   postgres   2 minutes ago        Up 2 minutes (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, Idempotency-Key
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Expose-Headers: Content-Length, Content-Disposition
+Content-Type: application/json; charset=utf-8
+Date: Sat, 26 Sep 2026 13:48:15 GMT
+Content-Length: 18
+
+{"status":"alive"}HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, Idempotency-Key
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Expose-Headers: Content-Length, Content-Disposition
+Content-Type: application/json; charset=utf-8
+Date: Sat, 26 Sep 2026 13:48:15 GMT
+Content-Length: 33
+
+{"db_ping":"ok","status":"ready"}HTTP/1.1 200 OK
+Server: nginx/1.31.6
+Date: Sat, 26 Sep 2026 13:48:15 GMT
+Content-Type: text/html
+Content-Length: 1391
+Last-Modified: Sat, 26 Sep 2026 13:45:16 GMT
+Connection: keep-alive
+ETag: "6ab7cc6c-56f"
+Accept-Ranges: bytes
+
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#1976d2" />
+    <meta name="description" content="NebengBeli - Solusi Pembukuan Titipan & Ledger Bersama Praktis" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+    />
+    <title>NebengBeli - Buku Titipan & Ledger Bersama</title>
+    <script type="module" crossorigin src="/assets/index-mJwhNKBU.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-ouyZUzPz.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(err => {
+            console.log('SW registration failed: ', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
