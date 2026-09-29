@@ -78,11 +78,16 @@ export function generateRekapText(
 
   for (const entry of sorted) {
     const entryTime = new Date(entry.occurred_at || entry.created_at);
+    const isUnsynced = Boolean(entry.is_offline_pending || entry.is_offline_failed);
+
     if (entryTime < startDate) {
       startingBalance += entry.amount;
+      if (isUnsynced) {
+        hasOfflineEntries = true;
+      }
     } else if (entryTime <= endDate) {
       filteredEntries.push(entry);
-      if (entry.is_offline_pending) {
+      if (isUnsynced) {
         hasOfflineEntries = true;
       }
     }
@@ -95,6 +100,9 @@ export function generateRekapText(
   lines.push(`📋 REKAP BUKU TITIPAN — ${wallet.name.toUpperCase()}`);
   lines.push(`👤 Pembuat: ${wallet.creator_username || 'OB/GA'}${wallet.owner_username ? ` | Rekan: ${wallet.owner_username}` : ''}`);
   lines.push(`📅 Periode: ${periodLabel}`);
+  if (hasOfflineEntries) {
+    lines.push('⚠️ PERINGATAN: Rekap mencakup entri offline yang belum tersinkronisasi ke server.');
+  }
   lines.push('');
   lines.push(`💰 Saldo Awal: ${formatRupiah(startingBalance)}`);
   lines.push('────────────────────────');
@@ -118,7 +126,11 @@ export function generateRekapText(
       }
 
       const noteStr = e.note ? ` (${e.note})` : '';
-      const offlineMark = e.is_offline_pending ? ' [Pending Offline]' : '';
+      const offlineMark = e.is_offline_failed
+        ? ' [Gagal Sinkron]'
+        : e.is_offline_pending
+        ? ' [Pending Offline]'
+        : '';
       lines.push(
         `${idx + 1}. [${dateStr} ${timeStr}] ${e.item_name}${noteStr}`
       );
@@ -237,7 +249,7 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
 
         {hasOfflineEntries && (
           <Alert severity="warning" icon={<CloudOffIcon />} sx={{ mb: 2 }}>
-            Peringatan: Rekap ini mencakup entri yang belum tersinkronisasi ke server.
+            Peringatan: Rekap untuk rentang ini mencakup entri yang belum tersinkronisasi ke server. Saldo dan rincian mungkin diperbarui saat terhubung kembali.
           </Alert>
         )}
 

@@ -18,6 +18,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { Entry } from '../types';
 import { formatRupiah } from './BalanceCard';
 
@@ -29,6 +31,9 @@ interface StatementViewProps {
   onPageChange: (newPage: number) => void;
   onCorrectEntry: (entry: Entry) => void;
   onMoveEntry: (entry: Entry) => void;
+  onDiscardFailedEntry?: (entry: Entry) => void;
+  onMoveFailedEntry?: (entry: Entry) => void;
+  onRetryFailedEntry?: (entry: Entry) => void;
   isArchivedWallet?: boolean;
 }
 
@@ -40,6 +45,9 @@ export const StatementView: React.FC<StatementViewProps> = ({
   onPageChange,
   onCorrectEntry,
   onMoveEntry,
+  onDiscardFailedEntry,
+  onMoveFailedEntry,
+  onRetryFailedEntry,
   isArchivedWallet,
 }) => {
   const safeEntries = entries || [];
@@ -60,9 +68,10 @@ export const StatementView: React.FC<StatementViewProps> = ({
     return safeEntries.map((e) => {
       const myCorrections = corrections[e.id] || [];
       const totalCorrectionDelta = myCorrections.reduce((sum, c) => sum + c.amount, 0);
-      const effective = e.type !== 'koreksi' && myCorrections.length > 0
-        ? e.amount + totalCorrectionDelta
-        : e.amount;
+      const effective =
+        e.type !== 'koreksi' && myCorrections.length > 0
+          ? e.amount + totalCorrectionDelta
+          : e.amount;
 
       return {
         ...e,
@@ -81,7 +90,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
           label="Gagal Sinkron"
           size="small"
           color="error"
-          variant="outlined"
+          variant="filled"
         />
       );
     }
@@ -142,7 +151,14 @@ export const StatementView: React.FC<StatementViewProps> = ({
                 const isActionDisabled = Boolean(e.is_offline_pending || isCorrectionType || isArchivedWallet);
 
                 return (
-                  <TableRow key={e.id} hover sx={{ opacity: e.is_offline_pending ? 0.75 : 1 }}>
+                  <TableRow
+                    key={e.id}
+                    hover
+                    sx={{
+                      bgcolor: e.is_offline_failed ? '#fff5f5' : 'inherit',
+                      opacity: e.is_offline_pending ? 0.75 : 1,
+                    }}
+                  >
                     <TableCell>
                       <Typography variant="body2">
                         {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
@@ -181,8 +197,8 @@ export const StatementView: React.FC<StatementViewProps> = ({
                         />
                       )}
                       {e.offline_error && (
-                        <Typography variant="caption" color="error" display="block">
-                          Error: {e.offline_error}
+                        <Typography variant="caption" color="error" display="block" sx={{ fontWeight: 600 }}>
+                          Alasan Ditolak: {e.offline_error}
                         </Typography>
                       )}
                     </TableCell>
@@ -235,46 +251,78 @@ export const StatementView: React.FC<StatementViewProps> = ({
                     </TableCell>
                     {!isArchivedWallet && (
                       <TableCell align="center">
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                          <Tooltip
-                            title={
-                              isCorrectionType
-                                ? 'Entri koreksi tidak dapat dikoreksi ulang'
-                                : e.is_offline_pending
-                                ? 'Tunggu sinkronisasi selesai'
-                                : 'Koreksi Entri'
-                            }
-                          >
-                            <span>
+                        {e.is_offline_failed ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                            <Tooltip title="Coba Sinkronkan Ulang">
                               <IconButton
                                 size="small"
-                                disabled={isActionDisabled}
-                                onClick={() => onCorrectEntry(e)}
+                                color="primary"
+                                onClick={() => onRetryFailedEntry?.(e)}
                               >
-                                <EditIcon fontSize="small" />
+                                <ReplayIcon fontSize="small" />
                               </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip
-                            title={
-                              isCorrectionType
-                                ? 'Entri koreksi tidak dapat dipindah'
-                                : e.is_offline_pending
-                                ? 'Tunggu sinkronisasi selesai'
-                                : 'Pindah ke Buku Lain'
-                            }
-                          >
-                            <span>
+                            </Tooltip>
+                            <Tooltip title="Pindahkan ke Buku Lain">
                               <IconButton
                                 size="small"
-                                disabled={isActionDisabled}
-                                onClick={() => onMoveEntry(e)}
+                                color="warning"
+                                onClick={() => onMoveFailedEntry?.(e)}
                               >
                                 <SwapHorizIcon fontSize="small" />
                               </IconButton>
-                            </span>
-                          </Tooltip>
-                        </Box>
+                            </Tooltip>
+                            <Tooltip title="Buang / Hapus Entri Gagal">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => onDiscardFailedEntry?.(e)}
+                              >
+                                <DeleteOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        ) : (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                            <Tooltip
+                              title={
+                                isCorrectionType
+                                  ? 'Entri koreksi tidak dapat dikoreksi ulang'
+                                  : e.is_offline_pending
+                                  ? 'Tunggu sinkronisasi selesai'
+                                  : 'Koreksi Entri'
+                              }
+                            >
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  disabled={isActionDisabled}
+                                  onClick={() => onCorrectEntry(e)}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip
+                              title={
+                                isCorrectionType
+                                  ? 'Entri koreksi tidak dapat dipindah'
+                                  : e.is_offline_pending
+                                  ? 'Tunggu sinkronisasi selesai'
+                                  : 'Pindah ke Buku Lain'
+                              }
+                            >
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  disabled={isActionDisabled}
+                                  onClick={() => onMoveEntry(e)}
+                                >
+                                  <SwapHorizIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Box>
+                        )}
                       </TableCell>
                     )}
                   </TableRow>

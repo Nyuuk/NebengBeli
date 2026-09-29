@@ -91,6 +91,7 @@ export interface AuditLog {
 
 export interface PendingOfflineEntry {
   client_id: string;
+  user_id?: string;
   wallet_id: string;
   type: EntryType;
   amount: number;
@@ -166,3 +167,44 @@ export interface ShoppingSessionDraft {
 }
 
 export type RecapPeriod = 'today' | 'this_week' | 'this_month' | 'custom';
+
+export interface AdminTrendPoint {
+  period_label: string;
+  count: number;
+  volume: number;
+}
+
+export interface AdminTrendsData {
+  daily_trends: AdminTrendPoint[];
+  weekly_trends: AdminTrendPoint[];
+  monthly_trends: AdminTrendPoint[];
+}
+
+export interface AdminCreatorBreakdownItem {
+  creator_id: string;
+  creator_username: string;
+  wallet_count: number;
+  total_titipan_count: number;
+  total_titipan_volume: number;
+  total_outstanding_balance: number;
+}
+
+export interface AdminWalletBreakdownItem {
+  wallet_id: string;
+  wallet_name: string;
+  creator_username: string;
+  owner_username?: string;
+  balance: number;
+  entry_count: number;
+  is_archived: boolean;
+  created_at: string;
+}
+
+export interface AdminTransactionTypeBreakdown {
+  titipan_count: number;
+  titipan_volume: number;
+  topup_count: number;
+  topup_volume: number;
+  koreksi_count: number;
+  koreksi_volume: number;
+}
