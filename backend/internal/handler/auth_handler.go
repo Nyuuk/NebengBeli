@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nyuuk/nebengbeli/internal/config"
@@ -37,7 +38,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, token, err := h.authSvc.Register(c.Request.Context(), req.Username, req.Password)
+	user, token, expiresAt, err := h.authSvc.Register(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -45,8 +46,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusCreated, gin.H{
-		"user":  user,
-		"token": token,
+		"user":       user,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
 
@@ -57,7 +59,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, token, err := h.authSvc.Login(c.Request.Context(), req.Username, req.Password)
+	user, token, expiresAt, err := h.authSvc.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -65,8 +67,31 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{
-		"user":  user,
-		"token": token,
+		"user":       user,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
+	})
+}
+
+func (h *AuthHandler) Renew(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	renewedUser, token, expiresAt, err := h.authSvc.RenewToken(c.Request.Context(), user.ID, user.TokenVersion)
+	if err != nil {
+		h.clearAuthCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.setAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{
+		"user":       renewedUser,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
 

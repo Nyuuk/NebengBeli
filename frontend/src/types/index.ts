@@ -39,7 +39,10 @@ export interface Entry {
   created_at: string;
   created_by_username?: string;
   running_balance?: number;
+  effective_amount?: number;
   is_offline_pending?: boolean;
+  is_offline_failed?: boolean;
+  offline_error?: string;
 }
 
 export interface StatementSummary {
@@ -57,6 +60,7 @@ export interface StatementResponse {
   total: number;
   page: number;
   page_size: number;
+  cached_at?: string;
 }
 
 export type LinkRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -97,4 +101,68 @@ export interface PendingOfflineEntry {
   occurred_at: string;
   created_at: string;
   retry_count: number;
+  status?: 'pending' | 'failed';
+  error_message?: string;
 }
+
+export interface ItemSuggestion {
+  item_name: string;
+  last_price: number;
+  frequency: number;
+}
+
+export interface BatchEntryItem {
+  client_id: string;
+  wallet_id: string;
+  type: EntryType;
+  amount: number;
+  item_name: string;
+  note?: string;
+  occurred_at?: string;
+}
+
+export interface BatchCreateEntriesPayload {
+  entries: BatchEntryItem[];
+}
+
+export interface BatchCreateEntriesResponse {
+  entries: Entry[];
+  count: number;
+}
+
+export interface CreatorInsights {
+  total_money_outside: number;
+  active_wallets_count: number;
+  total_wallets_count: number;
+  total_titipan_volume: number;
+  total_titipan_count: number;
+  daily_trends: { date: string; count: number; volume: number }[];
+  weekly_trends: { week: string; count: number; volume: number }[];
+  monthly_trends: { month: string; count: number; volume: number }[];
+  wallet_balances: {
+    wallet_id: string;
+    wallet_name: string;
+    balance: number;
+    owner_username?: string;
+    is_archived: boolean;
+  }[];
+  cached_at?: string;
+}
+
+export interface ShoppingSessionRow {
+  rowId: string;
+  wallet_id: string;
+  wallet_name?: string;
+  item_name: string;
+  amount_str: string;
+  amount: number;
+  note: string;
+}
+
+export interface ShoppingSessionDraft {
+  rows: ShoppingSessionRow[];
+  occurred_at: string;
+  saved_at: string;
+}
+
+export type RecapPeriod = 'today' | 'this_week' | 'this_month' | 'custom';

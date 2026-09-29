@@ -175,3 +175,96 @@ func (h *EntryHandler) Get(c *gin.Context) {
 
 	c.JSON(http.StatusOK, entry)
 }
+
+func (h *EntryHandler) CreateBatch(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var reqBody model.BatchEntriesRequest
+	if err := c.ShouldBindJSON(&reqBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.entrySvc.CreateBatchEntries(c.Request.Context(), user.ID, user.Role, reqBody)
+	if err != nil {
+		if err == service.ErrWalletPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, resp)
+}
+
+func (h *EntryHandler) GetItemSuggestions(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	walletIDStr := c.Param("id")
+	walletID, err := uuid.Parse(walletIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid wallet id"})
+		return
+	}
+
+	query := c.Query("query")
+	if query == "" {
+		query = c.Query("q")
+	}
+
+	suggestions, err := h.entrySvc.GetItemSuggestions(c.Request.Context(), walletID, user.ID, user.Role, query, 20)
+	if err != nil {
+		if err == service.ErrWalletPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if suggestions == nil {
+		suggestions = []model.ItemSuggestion{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": suggestions})
+}
+
+func (h *EntryHandler) GetCorrections(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	entryIDStr := c.Param("id")
+	entryID, err := uuid.Parse(entryIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid entry id"})
+		return
+	}
+
+	corrections, err := h.entrySvc.GetEntryCorrections(c.Request.Context(), entryID, user.ID, user.Role)
+	if err != nil {
+		if err == service.ErrWalletPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	if corrections == nil {
+		corrections = []model.Entry{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"corrections": corrections})
+}
