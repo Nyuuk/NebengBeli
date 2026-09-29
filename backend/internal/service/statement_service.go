@@ -48,7 +48,7 @@ func (s *statementService) GetStatement(ctx context.Context, walletID, userID uu
 		return nil, err
 	}
 
-	summary, err := s.entryRepo.GetWalletSummary(ctx, walletID)
+	summary, err := s.entryRepo.GetWalletSummaryWithFilter(ctx, walletID, filter.StartDate, filter.EndDate)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +119,8 @@ func (s *statementService) ExportCSV(ctx context.Context, walletID, userID uuid.
 		row := []string{
 			e.ID.String(),
 			e.ClientID.String(),
-			e.OccurredAt.Format(time.RFC3339),
-			e.CreatedAt.Format(time.RFC3339),
+			e.OccurredAt.In(JakartaLocation).Format(time.RFC3339),
+			e.CreatedAt.In(JakartaLocation).Format(time.RFC3339),
 			string(e.Type),
 			fmt.Sprintf("%d", e.Amount),
 			fmt.Sprintf("%d", e.RunningBalance),
