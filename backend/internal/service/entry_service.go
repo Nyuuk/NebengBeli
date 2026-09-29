@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,11 +42,8 @@ type MoveEntryRequest struct {
 
 type EntryService interface {
 	CreateEntry(ctx context.Context, userID uuid.UUID, userRole model.UserRole, req CreateEntryRequest) (*model.Entry, bool, error)
-	CreateBatchEntries(ctx context.Context, userID uuid.UUID, userRole model.UserRole, req model.BatchEntriesRequest) (*model.BatchEntriesResponse, error)
 	MoveEntry(ctx context.Context, userID uuid.UUID, userRole model.UserRole, req MoveEntryRequest) (*model.Entry, *model.Entry, error)
 	GetEntry(ctx context.Context, entryID, userID uuid.UUID, userRole model.UserRole) (*model.Entry, error)
-	GetItemSuggestions(ctx context.Context, walletID, userID uuid.UUID, userRole model.UserRole, query string, limit int) ([]model.ItemSuggestion, error)
-	GetEntryCorrections(ctx context.Context, entryID, userID uuid.UUID, userRole model.UserRole) ([]model.Entry, error)
 }
 
 type entryService struct {
@@ -77,13 +73,21 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		return nil, false, ErrItemNameRequired
 	}
 
-	// 1. Authorization and active status check: Only the wallet creator can record financial ledger entries
+	// 1. Authorization check
+	if userRole != model.RoleAdmin {
+		authz, err := s.walletRepo.IsUserAuthorized(ctx, req.WalletID, userID)
+		if err != nil {
+			return nil, false, err
+		}
+		if !authz {
+			return nil, false, ErrWalletPermissionDenied
+		}
+	}
+
+	// 2. Check wallet active status
 	wallet, err := s.walletRepo.GetByID(ctx, req.WalletID)
 	if err != nil {
 		return nil, false, err
-	}
-	if wallet.CreatorID != userID {
-		return nil, false, ErrWalletPermissionDenied
 	}
 	if wallet.ArchivedAt != nil {
 		return nil, false, ErrArchivedWallet
@@ -191,21 +195,22 @@ func (s *entryService) MoveEntry(ctx context.Context, userID uuid.UUID, userRole
 		return nil, nil, errors.New("source and destination wallets cannot be identical")
 	}
 
-	// 1. Authorization checks: Creator must own both source and target wallets
-	srcWallet, err := s.walletRepo.GetByID(ctx, req.SourceWalletID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if srcWallet.CreatorID != userID {
-		return nil, nil, ErrWalletPermissionDenied
+	// 1. Authorization checks for both wallets
+	if userRole != model.RoleAdmin {
+		srcAuthz, err := s.walletRepo.IsUserAuthorized(ctx, req.SourceWalletID, userID)
+		if err != nil || !srcAuthz {
+			return nil, nil, ErrWalletPermissionDenied
+		}
+		dstAuthz, err := s.walletRepo.IsUserAuthorized(ctx, req.TargetWalletID, userID)
+		if err != nil || !dstAuthz {
+			return nil, nil, ErrWalletPermissionDenied
+		}
 	}
 
+	// 2. Check destination wallet active
 	dstWallet, err := s.walletRepo.GetByID(ctx, req.TargetWalletID)
 	if err != nil {
 		return nil, nil, err
-	}
-	if dstWallet.CreatorID != userID {
-		return nil, nil, ErrWalletPermissionDenied
 	}
 	if dstWallet.ArchivedAt != nil {
 		return nil, nil, ErrDestinationArchived
@@ -236,126 +241,6 @@ func (s *entryService) MoveEntry(ctx context.Context, userID uuid.UUID, userRole
 	return corrEntry, newEntry, nil
 }
 
-func (s *entryService) CreateBatchEntries(ctx context.Context, userID uuid.UUID, userRole model.UserRole, req model.BatchEntriesRequest) (*model.BatchEntriesResponse, error) {
-	if len(req.Entries) == 0 {
-		return nil, errors.New("at least one entry is required in batch")
-	}
-
-	defaultOccurredAt := time.Now().UTC()
-	if req.OccurredAt != nil && !req.OccurredAt.IsZero() {
-		defaultOccurredAt = req.OccurredAt.UTC()
-	}
-
-	// Cache wallets to avoid duplicate DB calls
-	walletsCache := make(map[uuid.UUID]*model.Wallet)
-	entriesToInsert := make([]model.Entry, 0, len(req.Entries))
-	var totalAmount int64
-
-	for i, item := range req.Entries {
-		if item.WalletID == uuid.Nil {
-			return nil, fmt.Errorf("entry at row %d missing wallet_id", i+1)
-		}
-		if item.ItemName == "" {
-			return nil, fmt.Errorf("entry at row %d missing item_name", i+1)
-		}
-		if item.Amount == 0 {
-			return nil, fmt.Errorf("entry at row %d amount cannot be zero", i+1)
-		}
-
-		wallet, ok := walletsCache[item.WalletID]
-		if !ok {
-			var err error
-			wallet, err = s.walletRepo.GetByID(ctx, item.WalletID)
-			if err != nil {
-				return nil, fmt.Errorf("entry at row %d: invalid wallet (%w)", i+1, err)
-			}
-			walletsCache[item.WalletID] = wallet
-		}
-
-		// Verify creator and active status
-		if wallet.CreatorID != userID {
-			return nil, fmt.Errorf("entry at row %d: %w", i+1, ErrWalletPermissionDenied)
-		}
-		if wallet.ArchivedAt != nil {
-			return nil, fmt.Errorf("entry at row %d: %w", i+1, ErrArchivedWallet)
-		}
-
-		entryType := item.Type
-		if entryType == "" {
-			entryType = model.EntryTypeTitipan
-		}
-
-		var signedAmount int64
-		switch entryType {
-		case model.EntryTypeTitipan:
-			if item.Amount < 0 {
-				signedAmount = -item.Amount
-			} else {
-				signedAmount = item.Amount
-			}
-		case model.EntryTypeTopup:
-			if item.Amount > 0 {
-				signedAmount = -item.Amount
-			} else {
-				signedAmount = item.Amount
-			}
-		case model.EntryTypeKoreksi:
-			signedAmount = item.Amount
-		default:
-			return nil, fmt.Errorf("entry at row %d: %w", i+1, ErrInvalidEntryType)
-		}
-
-		var clientID uuid.UUID
-		if item.ClientID != nil && *item.ClientID != uuid.Nil {
-			clientID = *item.ClientID
-		} else {
-			clientID = uuid.New()
-		}
-
-		occurredAt := defaultOccurredAt
-		if item.OccurredAt != nil && !item.OccurredAt.IsZero() {
-			occurredAt = item.OccurredAt.UTC()
-		}
-
-		entriesToInsert = append(entriesToInsert, model.Entry{
-			ClientID:   clientID,
-			WalletID:   item.WalletID,
-			Type:       entryType,
-			Amount:     signedAmount,
-			ItemName:   item.ItemName,
-			Note:       item.Note,
-			OccurredAt: occurredAt,
-			CreatedBy:  userID,
-		})
-
-		totalAmount += signedAmount
-	}
-
-	created, err := s.entryRepo.CreateBatch(ctx, entriesToInsert)
-	if err != nil {
-		return nil, err
-	}
-
-	// Audit log for batch creation
-	meta, _ := json.Marshal(map[string]interface{}{
-		"count":        len(created),
-		"total_amount": totalAmount,
-	})
-	_ = s.auditRepo.Create(ctx, &model.AuditLog{
-		ActorID:    &userID,
-		Action:     string(model.AuditActionEntryBatchCreate),
-		TargetType: "entry_batch",
-		Metadata:   meta,
-	})
-
-	return &model.BatchEntriesResponse{
-		Message:     "batch entries created successfully",
-		Count:       len(created),
-		TotalAmount: totalAmount,
-		Entries:     created,
-	}, nil
-}
-
 func (s *entryService) GetEntry(ctx context.Context, entryID, userID uuid.UUID, userRole model.UserRole) (*model.Entry, error) {
 	entry, err := s.entryRepo.GetByID(ctx, entryID)
 	if err != nil {
@@ -370,31 +255,4 @@ func (s *entryService) GetEntry(ctx context.Context, entryID, userID uuid.UUID, 
 	}
 
 	return entry, nil
-}
-
-func (s *entryService) GetItemSuggestions(ctx context.Context, walletID, userID uuid.UUID, userRole model.UserRole, query string, limit int) ([]model.ItemSuggestion, error) {
-	if userRole != model.RoleAdmin {
-		authz, err := s.walletRepo.IsUserAuthorized(ctx, walletID, userID)
-		if err != nil || !authz {
-			return nil, ErrWalletPermissionDenied
-		}
-	}
-
-	return s.entryRepo.GetItemSuggestions(ctx, walletID, query, limit)
-}
-
-func (s *entryService) GetEntryCorrections(ctx context.Context, entryID, userID uuid.UUID, userRole model.UserRole) ([]model.Entry, error) {
-	entry, err := s.entryRepo.GetByID(ctx, entryID)
-	if err != nil {
-		return nil, err
-	}
-
-	if userRole != model.RoleAdmin {
-		authz, err := s.walletRepo.IsUserAuthorized(ctx, entry.WalletID, userID)
-		if err != nil || !authz {
-			return nil, ErrWalletPermissionDenied
-		}
-	}
-
-	return s.entryRepo.GetCorrectionsByEntryID(ctx, entryID)
 }

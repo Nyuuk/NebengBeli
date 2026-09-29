@@ -70,9 +70,6 @@ func (s *linkService) CreateLinkRequest(ctx context.Context, requestedBy uuid.UU
 		return nil, ErrCannotLinkSelf
 	}
 
-	// Cancel any existing pending requests on this wallet so only one is pending at a time
-	_ = s.linkRepo.CancelPendingForWallet(ctx, walletID)
-
 	req := &model.LinkRequest{
 		WalletID:     walletID,
 		RequestedBy:  requestedBy,

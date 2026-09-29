@@ -1,5 +1,5 @@
 import { request } from './client';
-import { Entry, EntryType, BatchEntryItem, BatchCreateEntriesResponse } from '../types';
+import { Entry, EntryType } from '../types';
 
 export interface CreateEntryPayload {
   client_id?: string;
@@ -29,25 +29,6 @@ export async function createEntryApi(
       body: JSON.stringify(payload),
     }
   );
-}
-
-export async function batchCreateEntriesApi(
-  entries: BatchEntryItem[]
-): Promise<BatchCreateEntriesResponse> {
-  return request<BatchCreateEntriesResponse>('/api/entries/batch', {
-    method: 'POST',
-    body: JSON.stringify({ entries }),
-  });
-}
-
-export async function batchCreateWalletEntriesApi(
-  walletId: string,
-  entries: BatchEntryItem[]
-): Promise<BatchCreateEntriesResponse> {
-  return request<BatchCreateEntriesResponse>(`/api/wallets/${walletId}/entries/batch`, {
-    method: 'POST',
-    body: JSON.stringify({ entries }),
-  });
 }
 
 export interface MoveEntryPayload {

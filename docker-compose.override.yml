@@ -2,4 +2,3 @@ services:
   frontend:
     ports: !override
       - "8088:80"
-      - "8443:443"

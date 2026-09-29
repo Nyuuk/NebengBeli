@@ -29,12 +29,8 @@ type EntryFilter struct {
 
 type EntryRepository interface {
 	Create(ctx context.Context, entry *model.Entry) (*model.Entry, bool, error) // returns entry, isDuplicate, error
-	CreateBatch(ctx context.Context, entries []model.Entry) ([]model.Entry, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Entry, error)
 	GetByClientID(ctx context.Context, clientID uuid.UUID) (*model.Entry, error)
-	GetCorrectionsByEntryID(ctx context.Context, entryID uuid.UUID) ([]model.Entry, error)
-	GetItemSuggestions(ctx context.Context, walletID uuid.UUID, query string, limit int) ([]model.ItemSuggestion, error)
-	GetTrendsByCreator(ctx context.Context, creatorID uuid.UUID) (*model.InsightTrends, error)
 	ListByWallet(ctx context.Context, filter EntryFilter) ([]model.Entry, int64, error)
 	GetWalletSummary(ctx context.Context, walletID uuid.UUID) (*model.StatementSummary, error)
 	MoveEntry(ctx context.Context, sourceWalletID, targetWalletID uuid.UUID, entryID uuid.UUID, createdBy uuid.UUID, notes string) (*model.Entry, *model.Entry, error)
@@ -110,8 +106,7 @@ func (r *sqlEntryRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.
 		SELECT 
 			e.id, e.client_id, e.wallet_id, e.type, e.amount, e.item_name, e.note,
 			e.corrects_entry_id, e.correction_reason, e.occurred_at, e.created_by, e.created_at,
-			u.username AS created_by_username,
-			e.amount + COALESCE((SELECT SUM(c.amount) FROM entries c WHERE c.corrects_entry_id = e.id), 0) AS effective_amount
+			u.username AS created_by_username
 		FROM entries e
 		JOIN users u ON e.created_by = u.id
 		WHERE e.id = $1;
@@ -131,7 +126,6 @@ func (r *sqlEntryRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.
 		&e.CreatedBy,
 		&e.CreatedAt,
 		&e.CreatedByUsername,
-		&e.EffectiveAmount,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrEntryNotFound
@@ -139,14 +133,6 @@ func (r *sqlEntryRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entry by id: %w", err)
 	}
-
-	// Fetch child corrections if any
-	corrections, _ := r.GetCorrectionsByEntryID(ctx, e.ID)
-	if corrections == nil {
-		corrections = make([]model.Entry, 0)
-	}
-	e.Corrections = corrections
-
 	return e, nil
 }
 
@@ -408,234 +394,4 @@ func (r *sqlEntryRepository) CountAll(ctx context.Context) (int64, int64, error)
 		FROM entries;
 	`).Scan(&count, &volume)
 	return count, volume, err
-}
-
-func (r *sqlEntryRepository) CreateBatch(ctx context.Context, entries []model.Entry) ([]model.Entry, error) {
-	if len(entries) == 0 {
-		return []model.Entry{}, nil
-	}
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin batch transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	createdEntries := make([]model.Entry, 0, len(entries))
-	now := time.Now().UTC()
-
-	insertSQL := `
-		INSERT INTO entries (
-			client_id, wallet_id, type, amount, item_name, note,
-			corrects_entry_id, correction_reason, occurred_at, created_by, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, created_at;
-	`
-
-	for i := range entries {
-		e := entries[i]
-		if e.ClientID == uuid.Nil {
-			e.ClientID = uuid.New()
-		}
-		if e.OccurredAt.IsZero() {
-			e.OccurredAt = now
-		}
-		if e.CreatedAt.IsZero() {
-			e.CreatedAt = now
-		}
-
-		err := tx.QueryRowContext(ctx, insertSQL,
-			e.ClientID,
-			e.WalletID,
-			e.Type,
-			e.Amount,
-			e.ItemName,
-			e.Note,
-			e.CorrectsEntryID,
-			e.CorrectionReason,
-			e.OccurredAt,
-			e.CreatedBy,
-			e.CreatedAt,
-		).Scan(&e.ID, &e.CreatedAt)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to insert batch entry (index %d, item '%s'): %w", i, e.ItemName, err)
-		}
-
-		createdEntries = append(createdEntries, e)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
-	}
-
-	return createdEntries, nil
-}
-
-func (r *sqlEntryRepository) GetItemSuggestions(ctx context.Context, walletID uuid.UUID, query string, limit int) ([]model.ItemSuggestion, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	sqlQuery := `
-		WITH ranked AS (
-			SELECT
-				item_name,
-				amount,
-				occurred_at,
-				ROW_NUMBER() OVER (PARTITION BY item_name ORDER BY occurred_at DESC, created_at DESC, id DESC) as rn,
-				COUNT(*) OVER (PARTITION BY item_name) as freq,
-				MAX(occurred_at) OVER (PARTITION BY item_name) as last_occ
-			FROM entries
-			WHERE wallet_id = $1 AND type = 'titipan'
-			  AND ($2 = '' OR item_name ILIKE '%' || $2 || '%')
-		)
-		SELECT item_name, amount AS last_price, freq AS frequency, last_occ AS last_occurred_at
-		FROM ranked
-		WHERE rn = 1
-		ORDER BY freq DESC, last_occurred_at DESC, item_name ASC
-		LIMIT $3;
-	`
-	rows, err := r.db.QueryContext(ctx, sqlQuery, walletID, query, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get item suggestions: %w", err)
-	}
-	defer rows.Close()
-
-	results := make([]model.ItemSuggestion, 0)
-	for rows.Next() {
-		var s model.ItemSuggestion
-		if err := rows.Scan(&s.ItemName, &s.LastPrice, &s.Frequency, &s.LastOccurredAt); err != nil {
-			return nil, fmt.Errorf("failed to scan item suggestion: %w", err)
-		}
-		results = append(results, s)
-	}
-	return results, nil
-}
-
-func (r *sqlEntryRepository) GetCorrectionsByEntryID(ctx context.Context, entryID uuid.UUID) ([]model.Entry, error) {
-	query := `
-		SELECT
-		e.id, e.client_id, e.wallet_id, e.type, e.amount, e.item_name, e.note,
-		e.corrects_entry_id, e.correction_reason, e.occurred_at, e.created_by, e.created_at,
-		u.username AS created_by_username
-		FROM entries e
-		JOIN users u ON e.created_by = u.id
-		WHERE e.corrects_entry_id = $1
-		ORDER BY e.occurred_at ASC, e.created_at ASC, e.id ASC;
-	`
-	rows, err := r.db.QueryContext(ctx, query, entryID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get corrections for entry: %w", err)
-	}
-	defer rows.Close()
-
-	corrections := make([]model.Entry, 0)
-	for rows.Next() {
-		var e model.Entry
-		if err := rows.Scan(
-			&e.ID,
-			&e.ClientID,
-			&e.WalletID,
-			&e.Type,
-			&e.Amount,
-			&e.ItemName,
-			&e.Note,
-			&e.CorrectsEntryID,
-			&e.CorrectionReason,
-			&e.OccurredAt,
-			&e.CreatedBy,
-			&e.CreatedAt,
-			&e.CreatedByUsername,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan correction entry: %w", err)
-		}
-		corrections = append(corrections, e)
-	}
-	return corrections, nil
-}
-
-func (r *sqlEntryRepository) GetTrendsByCreator(ctx context.Context, creatorID uuid.UUID) (*model.InsightTrends, error) {
-	trends := &model.InsightTrends{
-		Daily:   make([]model.TrendPoint, 0),
-		Weekly:  make([]model.TrendPoint, 0),
-		Monthly: make([]model.TrendPoint, 0),
-	}
-
-	// 1. Daily trends (past 30 days in Asia/Jakarta)
-	dailyQuery := `
-	SELECT
-			TO_CHAR(e.occurred_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD') AS day_label,
-			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
-		FROM entries e
-		JOIN wallets w ON e.wallet_id = w.id
-		WHERE w.creator_id = $1
-		  AND e.type = 'titipan'
-		  AND e.occurred_at >= NOW() - INTERVAL '30 days'
-		GROUP BY 1
-		ORDER BY 1 ASC;
-	`
-	rows, err := r.db.QueryContext(ctx, dailyQuery, creatorID)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var pt model.TrendPoint
-			if err := rows.Scan(&pt.Label, &pt.Count, &pt.TotalAmount); err == nil {
-				trends.Daily = append(trends.Daily, pt)
-			}
-		}
-	}
-
-	// 2. Weekly trends (past 12 weeks in Asia/Jakarta)
-	weeklyQuery := `
-	SELECT
-			TO_CHAR(DATE_TRUNC('week', e.occurred_at AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS week_label,
-			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
-		FROM entries e
-		JOIN wallets w ON e.wallet_id = w.id
-		WHERE w.creator_id = $1
-		  AND e.type = 'titipan'
-		  AND e.occurred_at >= NOW() - INTERVAL '12 weeks'
-		GROUP BY 1
-		ORDER BY 1 ASC;
-	`
-	wRows, err := r.db.QueryContext(ctx, weeklyQuery, creatorID)
-	if err == nil {
-		defer wRows.Close()
-		for wRows.Next() {
-			var pt model.TrendPoint
-			if err := wRows.Scan(&pt.Label, &pt.Count, &pt.TotalAmount); err == nil {
-				trends.Weekly = append(trends.Weekly, pt)
-			}
-		}
-	}
-
-	// 3. Monthly trends (past 12 months in Asia/Jakarta)
-	monthlyQuery := `
-	SELECT
-			TO_CHAR(e.occurred_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM') AS month_label,
-			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
-		FROM entries e
-		JOIN wallets w ON e.wallet_id = w.id
-		WHERE w.creator_id = $1
-		  AND e.type = 'titipan'
-		  AND e.occurred_at >= NOW() - INTERVAL '12 months'
-		GROUP BY 1
-		ORDER BY 1 ASC;
-	`
-	mRows, err := r.db.QueryContext(ctx, monthlyQuery, creatorID)
-	if err == nil {
-		defer mRows.Close()
-		for mRows.Next() {
-			var pt model.TrendPoint
-			if err := mRows.Scan(&pt.Label, &pt.Count, &pt.TotalAmount); err == nil {
-				trends.Monthly = append(trends.Monthly, pt)
-			}
-		}
-	}
-
-	return trends, nil
 }

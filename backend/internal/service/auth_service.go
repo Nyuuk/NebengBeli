@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/nyuuk/nebengbeli/internal/auth"
@@ -20,9 +19,8 @@ var (
 )
 
 type AuthService interface {
-	Register(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error)
-	Login(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error)
-	RenewToken(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.UserResponse, string, time.Time, error)
+	Register(ctx context.Context, username, password string) (*model.UserResponse, string, error)
+	Login(ctx context.Context, username, password string) (*model.UserResponse, string, error)
 	Logout(ctx context.Context, userID uuid.UUID) error
 	GetCurrentUser(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.User, error)
 	ResetPassword(ctx context.Context, userID uuid.UUID, newPassword string) error
@@ -48,10 +46,10 @@ func NewAuthService(
 	}
 }
 
-func (s *authService) Register(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error) {
+func (s *authService) Register(ctx context.Context, username, password string) (*model.UserResponse, string, error) {
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		return nil, "", time.Time{}, fmt.Errorf("invalid password: %w", err)
+		return nil, "", fmt.Errorf("invalid password: %w", err)
 	}
 
 	user := &model.User{
@@ -62,15 +60,13 @@ func (s *authService) Register(ctx context.Context, username, password string) (
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, "", time.Time{}, err
+		return nil, "", err
 	}
 
 	token, err := s.jwtMgr.GenerateToken(user)
 	if err != nil {
-		return nil, "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
+		return nil, "", fmt.Errorf("failed to generate token: %w", err)
 	}
-
-	expiresAt := time.Now().Add(s.jwtMgr.GetTokenDuration())
 
 	// Audit log
 	meta, _ := json.Marshal(map[string]interface{}{"username": username})
@@ -84,25 +80,23 @@ func (s *authService) Register(ctx context.Context, username, password string) (
 	})
 
 	resp := user.ToResponse()
-	return &resp, token, expiresAt, nil
+	return &resp, token, nil
 }
 
-func (s *authService) Login(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error) {
+func (s *authService) Login(ctx context.Context, username, password string) (*model.UserResponse, string, error) {
 	user, err := s.userRepo.GetByUsername(ctx, username)
 	if err != nil {
-		return nil, "", time.Time{}, ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
 	}
 
 	if !auth.CheckPassword(password, user.PasswordHash) {
-		return nil, "", time.Time{}, ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
 	}
 
 	token, err := s.jwtMgr.GenerateToken(user)
 	if err != nil {
-		return nil, "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
+		return nil, "", fmt.Errorf("failed to generate token: %w", err)
 	}
-
-	expiresAt := time.Now().Add(s.jwtMgr.GetTokenDuration())
 
 	// Audit log
 	meta, _ := json.Marshal(map[string]interface{}{"username": username})
@@ -116,37 +110,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*mo
 	})
 
 	resp := user.ToResponse()
-	return &resp, token, expiresAt, nil
-}
-
-func (s *authService) RenewToken(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.UserResponse, string, time.Time, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return nil, "", time.Time{}, ErrUnauthorized
-	}
-
-	if user.TokenVersion != tokenVersion {
-		return nil, "", time.Time{}, ErrTokenRevoked
-	}
-
-	token, err := s.jwtMgr.GenerateToken(user)
-	if err != nil {
-		return nil, "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
-	}
-
-	expiresAt := time.Now().Add(s.jwtMgr.GetTokenDuration())
-
-	entityID := user.ID.String()
-	_ = s.auditRepo.Create(ctx, &model.AuditLog{
-		ActorID:    &user.ID,
-		Action:     string(model.AuditActionUserRenew),
-		TargetType: "user",
-		TargetID:   &entityID,
-		Metadata:   []byte("{}"),
-	})
-
-	resp := user.ToResponse()
-	return &resp, token, expiresAt, nil
+	return &resp, token, nil
 }
 
 func (s *authService) Logout(ctx context.Context, userID uuid.UUID) error {

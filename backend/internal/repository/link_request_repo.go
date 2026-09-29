@@ -22,8 +22,6 @@ type LinkRequestRepository interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status model.LinkRequestStatus) error
 	ListForUser(ctx context.Context, userID uuid.UUID) ([]model.LinkRequest, error)
 	ListByWallet(ctx context.Context, walletID uuid.UUID) ([]model.LinkRequest, error)
-	CancelPendingForWallet(ctx context.Context, walletID uuid.UUID) error
-	GetPendingByWallet(ctx context.Context, walletID uuid.UUID) (*model.LinkRequest, error)
 }
 
 type sqlLinkRequestRepository struct {
@@ -199,51 +197,4 @@ func (r *sqlLinkRequestRepository) ListByWallet(ctx context.Context, walletID uu
 	}
 
 	return reqs, nil
-}
-
-func (r *sqlLinkRequestRepository) CancelPendingForWallet(ctx context.Context, walletID uuid.UUID) error {
-	query := `
-		UPDATE link_requests
-		SET status = 'rejected', decided_at = NOW()
-		WHERE wallet_id = $1 AND status = 'pending';
-	`
-	_, err := r.db.ExecContext(ctx, query, walletID)
-	return err
-}
-
-func (r *sqlLinkRequestRepository) GetPendingByWallet(ctx context.Context, walletID uuid.UUID) (*model.LinkRequest, error) {
-	query := `
-		SELECT
-			lr.id, lr.wallet_id, lr.requested_by, lr.target_user_id,
-			lr.status, lr.decided_at, lr.created_at,
-			w.name AS wallet_name,
-			ru.username AS requested_by_username,
-			tu.username AS target_username
-		FROM link_requests lr
-		JOIN wallets w ON lr.wallet_id = w.id
-		JOIN users ru ON lr.requested_by = ru.id
-		JOIN users tu ON lr.target_user_id = tu.id
-		WHERE lr.wallet_id = $1 AND lr.status = 'pending'
-		LIMIT 1;
-	`
-	lr := &model.LinkRequest{}
-	err := r.db.QueryRowContext(ctx, query, walletID).Scan(
-		&lr.ID,
-		&lr.WalletID,
-		&lr.RequestedBy,
-		&lr.TargetUserID,
-		&lr.Status,
-		&lr.DecidedAt,
-		&lr.CreatedAt,
-		&lr.WalletName,
-		&lr.RequestedByUsername,
-		&lr.TargetUsername,
-	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pending link request: %w", err)
-	}
-	return lr, nil
 }

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   Table,
   TableBody,
@@ -17,7 +17,6 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { Entry } from '../types';
 import { formatRupiah } from './BalanceCard';
 
@@ -45,51 +44,12 @@ export const StatementView: React.FC<StatementViewProps> = ({
   const safeEntries = entries || [];
   const totalPages = Math.ceil((totalCount || 0) / (pageSize || 25)) || 1;
 
-  // Compute effective amounts and corrections mapping
-  const entriesWithEffective = useMemo(() => {
-    const corrections: Record<string, Entry[]> = {};
-    for (const e of safeEntries) {
-      if (e.corrects_entry_id) {
-        if (!corrections[e.corrects_entry_id]) {
-          corrections[e.corrects_entry_id] = [];
-        }
-        corrections[e.corrects_entry_id].push(e);
-      }
-    }
-
-    return safeEntries.map((e) => {
-      const myCorrections = corrections[e.id] || [];
-      const totalCorrectionDelta = myCorrections.reduce((sum, c) => sum + c.amount, 0);
-      const effective = e.type !== 'koreksi' && myCorrections.length > 0
-        ? e.amount + totalCorrectionDelta
-        : e.amount;
-
-      return {
-        ...e,
-        effective_amount: effective,
-        has_corrections: myCorrections.length > 0,
-        corrections_count: myCorrections.length,
-      };
-    });
-  }, [safeEntries]);
-
-  const getTypeChip = (e: Entry) => {
-    if (e.is_offline_failed) {
-      return (
-        <Chip
-          icon={<ErrorOutlineIcon />}
-          label="Gagal Sinkron"
-          size="small"
-          color="error"
-          variant="outlined"
-        />
-      );
-    }
-    if (e.is_offline_pending) {
+  const getTypeChip = (type: string, isOffline?: boolean) => {
+    if (isOffline) {
       return (
         <Chip
           icon={<CloudOffIcon />}
-          label="Menunggu Sinkron"
+          label="Offline (Antrean)"
           size="small"
           color="warning"
           variant="outlined"
@@ -97,15 +57,15 @@ export const StatementView: React.FC<StatementViewProps> = ({
       );
     }
 
-    switch (e.type) {
+    switch (type) {
       case 'titipan':
         return <Chip label="Titipan" size="small" sx={{ bgcolor: '#ffebee', color: '#c62828', fontWeight: 600 }} />;
       case 'topup':
-        return <Chip label="Top-up / Bayar" size="small" sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', fontWeight: 600 }} />;
+        return <Chip label="Topup / Bayar" size="small" sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', fontWeight: 600 }} />;
       case 'koreksi':
         return <Chip label="Koreksi" size="small" sx={{ bgcolor: '#fff3e0', color: '#ef6c00', fontWeight: 600 }} />;
       default:
-        return <Chip label={e.type} size="small" />;
+        return <Chip label={type} size="small" />;
     }
   };
 
@@ -127,7 +87,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
             </TableRow>
           </TableHead>
           <TableBody>
-            {entriesWithEffective.length === 0 ? (
+            {safeEntries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={isArchivedWallet ? 6 : 7} align="center" sx={{ py: 4 }}>
                   <Typography variant="body2" color="text.secondary">
@@ -136,150 +96,88 @@ export const StatementView: React.FC<StatementViewProps> = ({
                 </TableCell>
               </TableRow>
             ) : (
-              entriesWithEffective.map((e) => {
-                const isCorrected = Boolean(e.has_corrections);
-                const isCorrectionType = e.type === 'koreksi';
-                const isActionDisabled = Boolean(e.is_offline_pending || isCorrectionType || isArchivedWallet);
-
-                return (
-                  <TableRow key={e.id} hover sx={{ opacity: e.is_offline_pending ? 0.75 : 1 }}>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+              safeEntries.map((e) => (
+                <TableRow key={e.id} hover sx={{ opacity: e.is_offline_pending ? 0.75 : 1 }}>
+                  <TableCell>
+                    <Typography variant="body2">
+                      {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    {getTypeChip(e.type, e.is_offline_pending)}
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {e.item_name}
+                    </Typography>
+                    {e.note && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {e.note}
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {getTypeChip(e)}
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {e.item_name}
-                      </Typography>
-                      {e.note && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          {e.note}
-                        </Typography>
-                      )}
-                      {e.corrects_entry_id && (
-                        <Typography variant="caption" color="warning.main" display="block">
-                          Koreksi entri: {e.corrects_entry_id.substring(0, 8)}... {e.correction_reason ? `(${e.correction_reason})` : ''}
-                        </Typography>
-                      )}
-                      {isCorrected && (
-                        <Chip
-                          label={`Ada ${e.corrections_count} koreksi`}
-                          size="small"
-                          color="warning"
-                          variant="outlined"
-                          sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
-                        />
-                      )}
-                      {e.offline_error && (
-                        <Typography variant="caption" color="error" display="block">
-                          Error: {e.offline_error}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      {isCorrected ? (
-                        <Box>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              textDecoration: 'line-through',
-                              color: 'text.secondary',
-                              display: 'block',
-                            }}
-                          >
-                            {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              fontWeight: 700,
-                              color: (e.effective_amount || 0) > 0 ? '#d32f2f' : '#2e7d32',
-                            }}
-                          >
-                            {(e.effective_amount || 0) > 0
-                              ? `+${formatRupiah(e.effective_amount || 0)}`
-                              : formatRupiah(e.effective_amount || 0)}
-                          </Typography>
-                        </Box>
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 700,
-                            color: e.amount > 0 ? '#d32f2f' : '#2e7d32',
-                          }}
-                        >
-                          {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {e.running_balance !== undefined ? formatRupiah(e.running_balance) : '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {e.created_by_username || 'System'}
-                      </Typography>
-                    </TableCell>
-                    {!isArchivedWallet && (
-                      <TableCell align="center">
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                          <Tooltip
-                            title={
-                              isCorrectionType
-                                ? 'Entri koreksi tidak dapat dikoreksi ulang'
-                                : e.is_offline_pending
-                                ? 'Tunggu sinkronisasi selesai'
-                                : 'Koreksi Entri'
-                            }
-                          >
-                            <span>
-                              <IconButton
-                                size="small"
-                                disabled={isActionDisabled}
-                                onClick={() => onCorrectEntry(e)}
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip
-                            title={
-                              isCorrectionType
-                                ? 'Entri koreksi tidak dapat dipindah'
-                                : e.is_offline_pending
-                                ? 'Tunggu sinkronisasi selesai'
-                                : 'Pindah ke Buku Lain'
-                            }
-                          >
-                            <span>
-                              <IconButton
-                                size="small"
-                                disabled={isActionDisabled}
-                                onClick={() => onMoveEntry(e)}
-                              >
-                                <SwapHorizIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </Box>
-                      </TableCell>
                     )}
-                  </TableRow>
-                );
-              })
+                    {e.corrects_entry_id && (
+                      <Typography variant="caption" color="warning.main" display="block">
+                        Ref Koreksi: {e.corrects_entry_id.substring(0, 8)}... {e.correction_reason ? `(${e.correction_reason})` : ''}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 700,
+                        color: e.amount > 0 ? '#d32f2f' : '#2e7d32',
+                      }}
+                    >
+                      {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {e.running_balance !== undefined ? formatRupiah(e.running_balance) : '-'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">
+                      {e.created_by_username || 'System'}
+                    </Typography>
+                  </TableCell>
+                  {!isArchivedWallet && (
+                    <TableCell align="center">
+                      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                        <Tooltip title={e.type === 'koreksi' ? 'Entri koreksi tidak dapat dikoreksi ulang' : 'Koreksi Entri'}>
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={Boolean(e.is_offline_pending || e.type === 'koreksi')}
+                              onClick={() => onCorrectEntry(e)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title={e.type === 'koreksi' ? 'Entri koreksi tidak dapat dipindah' : 'Pindah ke Wallet Lain'}>
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={Boolean(e.is_offline_pending || e.type === 'koreksi')}
+                              onClick={() => onMoveEntry(e)}
+                            >
+                              <SwapHorizIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>

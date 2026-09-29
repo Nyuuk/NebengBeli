@@ -29,39 +29,8 @@ type Entry struct {
 	CreatedAt        time.Time  `json:"created_at"`
 
 	// Derived / populated fields for API responses
-	CreatedByUsername string  `json:"created_by_username,omitempty"`
-	RunningBalance    int64   `json:"running_balance,omitempty"`
-	EffectiveAmount   int64   `json:"effective_amount,omitempty"`
-	Corrections       []Entry `json:"corrections,omitempty"`
-}
-
-type ItemSuggestion struct {
-	ItemName       string    `json:"item_name"`
-	LastPrice      int64     `json:"last_price"`
-	Frequency      int64     `json:"frequency"`
-	LastOccurredAt time.Time `json:"last_occurred_at,omitempty"`
-}
-
-type BatchEntryItem struct {
-	ClientID   *uuid.UUID `json:"client_id,omitempty"`
-	WalletID   uuid.UUID  `json:"wallet_id"`
-	Type       EntryType  `json:"type,omitempty"` // Default to titipan if omitted
-	Amount     int64      `json:"amount"`
-	ItemName   string     `json:"item_name"`
-	Note       string     `json:"note,omitempty"`
-	OccurredAt *time.Time `json:"occurred_at,omitempty"`
-}
-
-type BatchEntriesRequest struct {
-	OccurredAt *time.Time       `json:"occurred_at,omitempty"`
-	Entries    []BatchEntryItem `json:"entries"`
-}
-
-type BatchEntriesResponse struct {
-	Message     string  `json:"message"`
-	Count       int     `json:"count"`
-	TotalAmount int64   `json:"total_amount"`
-	Entries     []Entry `json:"entries"`
+	CreatedByUsername string `json:"created_by_username,omitempty"`
+	RunningBalance    int64  `json:"running_balance,omitempty"`
 }
 
 type StatementSummary struct {

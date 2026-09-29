@@ -50,7 +50,7 @@ func main() {
 	// 4. Initialize Auth & Services
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
 	authSvc := service.NewAuthService(userRepo, auditRepo, jwtMgr)
-	walletSvc := service.NewWalletService(walletRepo, userRepo, entryRepo, auditRepo)
+	walletSvc := service.NewWalletService(walletRepo, userRepo, auditRepo)
 	entrySvc := service.NewEntryService(entryRepo, walletRepo, auditRepo)
 	linkSvc := service.NewLinkService(linkRepo, walletRepo, userRepo, auditRepo)
 	stmtSvc := service.NewStatementService(entryRepo, walletRepo)
@@ -77,14 +77,6 @@ func main() {
 	r.GET("/healthz", healthHandler.Healthz)
 	r.GET("/readyz", healthHandler.Readyz)
 
-	// Direct /auth group fallback for single-domain reverse proxy routing
-	topAuth := r.Group("/auth")
-	topAuth.Use(authLimiter.Middleware())
-	{
-		topAuth.POST("/register", authHandler.Register)
-		topAuth.POST("/login", authHandler.Login)
-	}
-
 	// Public Auth Routes (rate limited)
 	api := r.Group("/api")
 	{
@@ -103,34 +95,17 @@ func main() {
 			// Auth
 			authRequired.POST("/auth/logout", authHandler.Logout)
 			authRequired.GET("/auth/me", authHandler.Me)
-			authRequired.POST("/auth/renew", authHandler.Renew)
-			authRequired.GET("/auth/renew", authHandler.Renew)
 			authRequired.POST("/auth/reset-password", authHandler.ResetPassword)
-			authRequired.POST("/auth/change-password", authHandler.ResetPassword)
-
-			// Insights (F8: Total uang saya yang masih di luar, charts & trends)
-			authRequired.GET("/insights", walletHandler.GetInsights)
 
 			// Wallets
 			wallets := authRequired.Group("/wallets")
 			{
 				wallets.POST("", walletHandler.Create)
 				wallets.GET("", walletHandler.List)
-				wallets.GET("/insights", walletHandler.GetInsights)
 				wallets.GET("/:id", walletHandler.Get)
 				wallets.PATCH("/:id/name", walletHandler.UpdateName)
 				wallets.POST("/:id/archive", walletHandler.Archive)
 				wallets.POST("/:id/unarchive", walletHandler.Unarchive)
-
-				// Unlink owner (F6: Pembuat memutus link)
-				wallets.DELETE("/:id/link", walletHandler.Unlink)
-				wallets.DELETE("/:id/owner", walletHandler.Unlink)
-				wallets.POST("/:id/unlink", walletHandler.Unlink)
-
-				// Autocomplete item history (F1: Sesi Belanja item suggestions)
-				wallets.GET("/:id/items", entryHandler.GetItemSuggestions)
-				wallets.GET("/:id/item-suggestions", entryHandler.GetItemSuggestions)
-				wallets.GET("/:id/suggestions", entryHandler.GetItemSuggestions)
 
 				// Ledger entries on wallet
 				wallets.POST("/:id/entries", entryHandler.Create)
@@ -143,13 +118,11 @@ func main() {
 				wallets.POST("/:id/links", linkHandler.Create)
 			}
 
-			// Single entries, batch entries, and cross-wallet actions
+			// Single entries and cross-wallet actions
 			entries := authRequired.Group("/entries")
 			{
-				entries.POST("/batch", entryHandler.CreateBatch) // F1: Simpan Semua batch entries in 1 DB transaction
-				entries.POST("/move", entryHandler.Move)         // F3: Pindah ke dompet lain
+				entries.POST("/move", entryHandler.Move)
 				entries.GET("/:id", entryHandler.Get)
-				entries.GET("/:id/corrections", entryHandler.GetCorrections) // F3: Daftar koreksi entri
 			}
 
 			// Link Requests

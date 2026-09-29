@@ -22,23 +22,3 @@ type Wallet struct {
 	IsArchived      bool   `json:"is_archived"`
 	UserRole        string `json:"user_role,omitempty"` // "creator", "owner", or "both"
 }
-
-type TrendPoint struct {
-	Label       string `json:"label"` // e.g. "2026-09-29" or "2026-W39" or "2026-09"
-	Count       int64  `json:"count"`
-	TotalAmount int64  `json:"total_amount"`
-}
-
-type InsightTrends struct {
-	Daily   []TrendPoint `json:"daily"`
-	Weekly  []TrendPoint `json:"weekly"`
-	Monthly []TrendPoint `json:"monthly"`
-}
-
-type CreatorInsights struct {
-	TotalOutstanding     int64         `json:"total_outstanding"` // Total uang saya yang masih di luar
-	TotalActiveWallets   int64         `json:"total_active_wallets"`
-	TotalArchivedWallets int64         `json:"total_archived_wallets"`
-	Wallets              []Wallet      `json:"wallets"`
-	Trends               InsightTrends `json:"trends"`
-}

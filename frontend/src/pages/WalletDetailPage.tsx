@@ -13,8 +13,6 @@ import {
   TextField,
   Menu,
   MenuItem,
-  Chip,
-  Tooltip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ShareIcon from '@mui/icons-material/Share';
@@ -24,37 +22,24 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import UnarchiveIcon from '@mui/icons-material/Unarchive';
 import EditIcon from '@mui/icons-material/Edit';
-import TextSnippetIcon from '@mui/icons-material/TextSnippet';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import { useParams, useNavigate } from 'react-router-dom';
 
 import { Layout } from '../components/Layout';
-import { BalanceCard, formatRupiah } from '../components/BalanceCard';
+import { BalanceCard } from '../components/BalanceCard';
 import { StatementView } from '../components/StatementView';
 import { EntryModal } from '../components/EntryModal';
 import { CorrectionModal } from '../components/CorrectionModal';
 import { MoveEntryModal } from '../components/MoveEntryModal';
 import { LinkWalletModal } from '../components/LinkWalletModal';
-import { UnlinkWalletModal } from '../components/UnlinkWalletModal';
-import { RekapTextModal } from '../components/RekapTextModal';
 
 import { updateWalletNameApi, archiveWalletApi, unarchiveWalletApi } from '../api/wallets';
 import { getStatementApi, getExportCSVUrl } from '../api/statements';
-import {
-  getPendingOfflineEntriesByWallet,
-  setCachedStatement,
-  getCachedStatement,
-} from '../offline/db';
-import { useAuth } from '../context/AuthContext';
-import { useOnlineStatus } from '../context/OnlineStatusContext';
+import { getPendingOfflineEntriesByWallet } from '../offline/db';
 import { Wallet, Entry, StatementSummary } from '../types';
 
 export const WalletDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const { isOnline } = useOnlineStatus();
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [summary, setSummary] = useState<StatementSummary | null>(null);
@@ -62,7 +47,6 @@ export const WalletDetailPage: React.FC = () => {
   const [totalEntries, setTotalEntries] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Modals
@@ -72,8 +56,6 @@ export const WalletDetailPage: React.FC = () => {
   const [openMoveModal, setOpenMoveModal] = useState<boolean>(false);
   const [selectedEntryForMove, setSelectedEntryForMove] = useState<Entry | null>(null);
   const [openLinkModal, setOpenLinkModal] = useState<boolean>(false);
-  const [openUnlinkModal, setOpenUnlinkModal] = useState<boolean>(false);
-  const [openRekapModal, setOpenRekapModal] = useState<boolean>(false);
   const [openRenameModal, setOpenRenameModal] = useState<boolean>(false);
   const [renameValue, setRenameValue] = useState<string>('');
 
@@ -86,7 +68,12 @@ export const WalletDetailPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // 1. Fetch pending offline items from IndexedDB for this wallet
+      // 1. Fetch statement & wallet details
+      const stmt = await getStatementApi(id, { page, limit: 25 });
+      setWallet(stmt.wallet);
+      setSummary(stmt.summary);
+
+      // 2. Fetch pending offline items from IndexedDB for this wallet
       const pending = await getPendingOfflineEntriesByWallet(id);
       const pendingEntries: Entry[] = pending.map((p) => ({
         id: p.client_id,
@@ -102,81 +89,28 @@ export const WalletDetailPage: React.FC = () => {
         created_by: 'me',
         created_at: p.created_at,
         created_by_username: 'Anda (Offline)',
-        is_offline_pending: p.status === 'pending' || !p.status,
-        is_offline_failed: p.status === 'failed',
-        offline_error: p.error_message,
+        is_offline_pending: true,
       }));
 
-      if (isOnline) {
-        // Online: fetch fresh statement
-        const stmt = await getStatementApi(id, { page, limit: 50 });
-        setWallet(stmt.wallet);
-
-        // Adjust summary with unsynced offline entries
-        const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
-        const adjustedSummary: StatementSummary = {
-          ...stmt.summary,
-          current_balance: (stmt.summary?.current_balance || 0) + pendingDelta,
-          entry_count: (stmt.summary?.entry_count || 0) + pendingEntries.length,
-        };
-        setSummary(adjustedSummary);
-
-        const stmtEntries = stmt?.entries || [];
-        const stmtTotal = stmt?.total ?? 0;
-        setEntries([...pendingEntries, ...stmtEntries]);
-        setTotalEntries(stmtTotal + pendingEntries.length);
-        setLastSyncedAt(new Date().toISOString());
-
-        // Cache statement in IDB
-        await setCachedStatement(id, {
-          ...stmt,
-          cached_at: new Date().toISOString(),
-        });
-      } else {
-        // Offline: retrieve from cache
-        const cached = await getCachedStatement(id);
-        if (cached?.data) {
-          const cachedStmt = cached.data;
-          setWallet(cachedStmt.wallet);
-
-          const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
-          setSummary({
-            ...cachedStmt.summary,
-            current_balance: (cachedStmt.summary?.current_balance || 0) + pendingDelta,
-            entry_count: (cachedStmt.summary?.entry_count || 0) + pendingEntries.length,
-          });
-
-          setEntries([...pendingEntries, ...(cachedStmt.entries || [])]);
-          setTotalEntries((cachedStmt.total || 0) + pendingEntries.length);
-          setLastSyncedAt(cached.cached_at);
-        } else {
-          setError('Data buku ini belum tersedia secara offline.');
-        }
-      }
+      // Merge pending offline entries at the top
+      const stmtEntries = stmt?.entries || [];
+      const stmtTotal = stmt?.total ?? 0;
+      setEntries([...pendingEntries, ...stmtEntries]);
+      setTotalEntries(stmtTotal + pendingEntries.length);
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal memuat data buku ledger.');
     } finally {
       setLoading(false);
     }
-  }, [id, page, isOnline]);
+  }, [id, page]);
 
   useEffect(() => {
     fetchWalletData();
   }, [fetchWalletData]);
 
-  // Listen for sync completion event
-  useEffect(() => {
-    const handleSynced = () => {
-      fetchWalletData();
-    };
-    window.addEventListener('nebengbeli:synced', handleSynced);
-    return () => {
-      window.removeEventListener('nebengbeli:synced', handleSynced);
-    };
-  }, [fetchWalletData]);
-
   const handleEntrySuccess = (newEntry: Entry, isOffline?: boolean) => {
+    // Optimistic update
     setEntries((prev) => [newEntry, ...prev]);
     setTotalEntries((prev) => prev + 1);
     if (summary) {
@@ -211,14 +145,6 @@ export const WalletDetailPage: React.FC = () => {
   const handleToggleArchive = async () => {
     if (!id || !wallet) return;
     setMenuAnchor(null);
-
-    if (!wallet.is_archived && wallet.balance !== 0) {
-      const proceed = window.confirm(
-        `Peringatan: Buku ini masih memiliki saldo ${formatRupiah(wallet.balance)}. Apakah Anda yakin ingin mengarsipkan buku bersaldo ini?`
-      );
-      if (!proceed) return;
-    }
-
     try {
       if (wallet.is_archived) {
         await unarchiveWalletApi(id);
@@ -231,10 +157,6 @@ export const WalletDetailPage: React.FC = () => {
       setError(apiErr.message || 'Gagal mengubah status arsip.');
     }
   };
-
-  const isCreator = Boolean(
-    wallet && (wallet.creator_id === user?.id || wallet.user_role === 'creator' || wallet.user_role === 'both' || !wallet.user_role)
-  );
 
   if (loading && !wallet) {
     return (
@@ -262,77 +184,39 @@ export const WalletDetailPage: React.FC = () => {
   return (
     <Layout>
       {/* Header Bar */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <IconButton onClick={() => navigate('/')} sx={{ mr: 0.5 }}>
             <ArrowBackIcon />
           </IconButton>
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
-                {wallet.name}
-              </Typography>
-              {wallet.is_archived && (
-                <Chip label="Diarsipkan" size="small" color="default" />
-              )}
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              Pembuat: {wallet.creator_username || 'Anda'} {wallet.owner_username ? `• Rekan: @${wallet.owner_username}` : '• (Belum tertaut)'}
+            <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+              {wallet.name}
             </Typography>
-            {lastSyncedAt && (
-              <Typography variant="caption" color="text.secondary" display="block">
-                Terakhir disinkron: {new Date(lastSyncedAt).toLocaleTimeString('id-ID')}
-              </Typography>
-            )}
+            <Typography variant="caption" color="text.secondary">
+              Pembuat: {wallet.creator_username} {wallet.owner_username ? `• Rekan: ${wallet.owner_username}` : '• (Belum tertaut)'}
+            </Typography>
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Tooltip title="Refresh data">
-            <IconButton onClick={fetchWalletData} disabled={loading}>
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-
-          <Button
-            variant="outlined"
-            startIcon={<TextSnippetIcon />}
-            onClick={() => setOpenRekapModal(true)}
-            sx={{ fontWeight: 600 }}
-          >
-            Rekap Teks
-          </Button>
-
-          {!wallet.is_archived && isCreator && (
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {!wallet.is_archived && (
             <>
-              {!wallet.owner_username ? (
-                <Button
-                  variant="outlined"
-                  startIcon={<ShareIcon />}
-                  onClick={() => setOpenLinkModal(true)}
-                  sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
-                >
-                  Tautkan
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  startIcon={<LinkOffIcon />}
-                  onClick={() => setOpenUnlinkModal(true)}
-                  sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
-                >
-                  Putus Tautan
-                </Button>
-              )}
-
+              <Button
+                variant="outlined"
+                startIcon={<ShareIcon />}
+                onClick={() => setOpenLinkModal(true)}
+                sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
+              >
+                Tautkan
+              </Button>
               <Button
                 variant="contained"
                 startIcon={<AddIcon />}
                 onClick={() => setOpenEntryModal(true)}
                 sx={{ fontWeight: 700 }}
               >
-                Catat Transaksi
+                Tambah Entri
               </Button>
             </>
           )}
@@ -346,39 +230,26 @@ export const WalletDetailPage: React.FC = () => {
             open={Boolean(menuAnchor)}
             onClose={() => setMenuAnchor(null)}
           >
-            <MenuItem onClick={() => { setMenuAnchor(null); setOpenRekapModal(true); }}>
-              <TextSnippetIcon fontSize="small" sx={{ mr: 1 }} /> Buat Rekap Teks (WA/Telegram)
+            <MenuItem onClick={() => { setMenuAnchor(null); setRenameValue(wallet.name); setOpenRenameModal(true); }}>
+              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Ganti Nama Buku
             </MenuItem>
             <MenuItem onClick={() => { setMenuAnchor(null); window.open(getExportCSVUrl(wallet.id), '_blank'); }}>
-              <FileDownloadIcon fontSize="small" sx={{ mr: 1 }} /> Unduh CSV Laporan
+              <FileDownloadIcon fontSize="small" sx={{ mr: 1 }} /> Ekspor Laporan CSV
             </MenuItem>
-            {isCreator && (
-              <>
-                <MenuItem onClick={() => { setMenuAnchor(null); setRenameValue(wallet.name); setOpenRenameModal(true); }}>
-                  <EditIcon fontSize="small" sx={{ mr: 1 }} /> Ganti Nama Buku
-                </MenuItem>
-                {!wallet.owner_username ? (
-                  <MenuItem onClick={() => { setMenuAnchor(null); setOpenLinkModal(true); }}>
-                    <ShareIcon fontSize="small" sx={{ mr: 1 }} /> Tautkan ke Rekan
-                  </MenuItem>
-                ) : (
-                  <MenuItem onClick={() => { setMenuAnchor(null); setOpenUnlinkModal(true); }} sx={{ color: 'warning.main' }}>
-                    <LinkOffIcon fontSize="small" sx={{ mr: 1 }} /> Putus Tautan Rekan
-                  </MenuItem>
-                )}
-                <MenuItem onClick={handleToggleArchive} sx={{ color: wallet.is_archived ? 'primary.main' : 'error.main' }}>
-                  {wallet.is_archived ? (
-                    <>
-                      <UnarchiveIcon fontSize="small" sx={{ mr: 1 }} /> Batalkan Arsip
-                    </>
-                  ) : (
-                    <>
-                      <ArchiveIcon fontSize="small" sx={{ mr: 1 }} /> Arsipkan Buku
-                    </>
-                  )}
-                </MenuItem>
-              </>
-            )}
+            <MenuItem onClick={() => { setMenuAnchor(null); setOpenLinkModal(true); }}>
+              <ShareIcon fontSize="small" sx={{ mr: 1 }} /> Tautkan ke Rekan
+            </MenuItem>
+            <MenuItem onClick={handleToggleArchive} sx={{ color: wallet.is_archived ? 'primary.main' : 'warning.main' }}>
+              {wallet.is_archived ? (
+                <>
+                  <UnarchiveIcon fontSize="small" sx={{ mr: 1 }} /> Batalkan Arsip
+                </>
+              ) : (
+                <>
+                  <ArchiveIcon fontSize="small" sx={{ mr: 1 }} /> Arsipkan Buku
+                </>
+              )}
+            </MenuItem>
           </Menu>
         </Box>
       </Box>
@@ -411,7 +282,7 @@ export const WalletDetailPage: React.FC = () => {
         entries={entries}
         totalCount={totalEntries}
         page={page}
-        pageSize={50}
+        pageSize={25}
         onPageChange={(p) => setPage(p)}
         onCorrectEntry={(e) => {
           setSelectedEntryForCorrection(e);
@@ -454,20 +325,6 @@ export const WalletDetailPage: React.FC = () => {
         walletName={wallet.name}
         onClose={() => setOpenLinkModal(false)}
         onSuccess={() => fetchWalletData()}
-      />
-
-      <UnlinkWalletModal
-        open={openUnlinkModal}
-        wallet={wallet}
-        onClose={() => setOpenUnlinkModal(false)}
-        onSuccess={() => fetchWalletData()}
-      />
-
-      <RekapTextModal
-        open={openRekapModal}
-        wallet={wallet}
-        entries={entries}
-        onClose={() => setOpenRekapModal(false)}
       />
 
       {/* Rename Dialog */}

@@ -18,15 +18,12 @@ const (
 	AuditActionWalletUpdate       AuditAction = "wallet.update"
 	AuditActionWalletArchive      AuditAction = "wallet.archive"
 	AuditActionWalletUnarchive    AuditAction = "wallet.unarchive"
-	AuditActionWalletUnlink       AuditAction = "wallet.unlink"
 	AuditActionEntryCreate        AuditAction = "entry.create"
-	AuditActionEntryBatchCreate   AuditAction = "entry.batch_create"
 	AuditActionEntryCorrect       AuditAction = "entry.correct"
 	AuditActionEntryMove          AuditAction = "entry.move"
 	AuditActionLinkRequestCreate  AuditAction = "link_request.create"
 	AuditActionLinkRequestApprove AuditAction = "link_request.approve"
 	AuditActionLinkRequestReject  AuditAction = "link_request.reject"
-	AuditActionUserRenew          AuditAction = "user.renew"
 	AuditActionAdminInspect       AuditAction = "admin.inspect"
 )
 
