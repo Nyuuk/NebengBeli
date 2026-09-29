@@ -87,6 +87,56 @@ func (m *mockEntryRepo) MoveEntry(ctx context.Context, sourceWalletID, targetWal
 	return corr, newE, nil
 }
 
+func (m *mockEntryRepo) CreateBatch(ctx context.Context, entries []model.Entry) ([]model.Entry, error) {
+	created := make([]model.Entry, 0, len(entries))
+	for _, e := range entries {
+		entryCopy := e
+		entryCopy.ID = uuid.New()
+		entryCopy.CreatedAt = time.Now()
+		m.entries[entryCopy.ID] = &entryCopy
+		created = append(created, entryCopy)
+	}
+	return created, nil
+}
+
+func (m *mockEntryRepo) GetCorrectionsByEntryID(ctx context.Context, entryID uuid.UUID) ([]model.Entry, error) {
+	res := make([]model.Entry, 0)
+	for _, e := range m.entries {
+		if e.CorrectsEntryID != nil && *e.CorrectsEntryID == entryID {
+			res = append(res, *e)
+		}
+	}
+	return res, nil
+}
+
+func (m *mockEntryRepo) GetItemSuggestions(ctx context.Context, walletID uuid.UUID, query string, limit int) ([]model.ItemSuggestion, error) {
+	itemCounts := make(map[string]int64)
+	itemPrices := make(map[string]int64)
+	for _, e := range m.entries {
+		if e.WalletID == walletID && e.Type == model.EntryTypeTitipan {
+			itemCounts[e.ItemName]++
+			itemPrices[e.ItemName] = e.Amount
+		}
+	}
+	res := make([]model.ItemSuggestion, 0)
+	for name, count := range itemCounts {
+		res = append(res, model.ItemSuggestion{
+			ItemName:  name,
+			LastPrice: itemPrices[name],
+			Frequency: count,
+		})
+	}
+	return res, nil
+}
+
+func (m *mockEntryRepo) GetTrendsByCreator(ctx context.Context, creatorID uuid.UUID) (*model.InsightTrends, error) {
+	return &model.InsightTrends{
+		Daily:   []model.TrendPoint{},
+		Weekly:  []model.TrendPoint{},
+		Monthly: []model.TrendPoint{},
+	}, nil
+}
+
 func (m *mockEntryRepo) CountAll(ctx context.Context) (int64, int64, error) {
 	return int64(len(m.entries)), 0, nil
 }
@@ -114,7 +164,15 @@ func (m *mockWalletRepo) GetByIDWithDetails(ctx context.Context, id uuid.UUID, u
 }
 
 func (m *mockWalletRepo) ListByUser(ctx context.Context, userID uuid.UUID, includeArchived bool) ([]model.Wallet, error) {
-	return make([]model.Wallet, 0), nil
+	res := make([]model.Wallet, 0)
+	for _, w := range m.wallets {
+		if w.CreatorID == userID || (w.OwnerID != nil && *w.OwnerID == userID) {
+			if includeArchived || w.ArchivedAt == nil {
+				res = append(res, *w)
+			}
+		}
+	}
+	return res, nil
 }
 
 func (m *mockWalletRepo) ListAll(ctx context.Context, limit, offset int) ([]model.Wallet, int64, error) {
@@ -122,19 +180,69 @@ func (m *mockWalletRepo) ListAll(ctx context.Context, limit, offset int) ([]mode
 }
 
 func (m *mockWalletRepo) UpdateName(ctx context.Context, id uuid.UUID, name string) error {
-	return nil
+	if w, ok := m.wallets[id]; ok {
+		w.Name = name
+		return nil
+	}
+	return repository.ErrWalletNotFound
 }
 
 func (m *mockWalletRepo) SetArchived(ctx context.Context, id uuid.UUID, archived bool) error {
-	return nil
+	if w, ok := m.wallets[id]; ok {
+		if archived {
+			now := time.Now()
+			w.ArchivedAt = &now
+			w.IsArchived = true
+		} else {
+			w.ArchivedAt = nil
+			w.IsArchived = false
+		}
+		return nil
+	}
+	return repository.ErrWalletNotFound
 }
 
 func (m *mockWalletRepo) SetOwner(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) error {
-	return nil
+	if w, ok := m.wallets[id]; ok {
+		w.OwnerID = &ownerID
+		return nil
+	}
+	return repository.ErrWalletNotFound
+}
+
+func (m *mockWalletRepo) UnlinkOwner(ctx context.Context, id uuid.UUID) error {
+	if w, ok := m.wallets[id]; ok {
+		w.OwnerID = nil
+		return nil
+	}
+	return repository.ErrWalletNotFound
+}
+
+func (m *mockWalletRepo) GetCreatorWalletsSummary(ctx context.Context, creatorID uuid.UUID) (int64, int64, int64, []model.Wallet, error) {
+	var totalOutstanding, activeCount, archivedCount int64
+	wallets := make([]model.Wallet, 0)
+	for _, w := range m.wallets {
+		if w.CreatorID == creatorID {
+			if w.ArchivedAt != nil {
+				archivedCount++
+			} else {
+				activeCount++
+				if w.Balance > 0 {
+					totalOutstanding += w.Balance
+				}
+			}
+			wallets = append(wallets, *w)
+		}
+	}
+	return totalOutstanding, activeCount, archivedCount, wallets, nil
 }
 
 func (m *mockWalletRepo) IsUserAuthorized(ctx context.Context, walletID, userID uuid.UUID) (bool, error) {
-	return true, nil
+	w, ok := m.wallets[walletID]
+	if !ok {
+		return false, nil
+	}
+	return w.CreatorID == userID || (w.OwnerID != nil && *w.OwnerID == userID), nil
 }
 
 func (m *mockWalletRepo) Count(ctx context.Context) (int64, int64, error) {
@@ -213,19 +321,85 @@ func (m *mockUserRepo) Count(ctx context.Context) (int64, error) {
 	return int64(len(m.usersByID)), nil
 }
 
-type mockLinkRepo struct{}
-
-func (m *mockLinkRepo) Create(ctx context.Context, req *model.LinkRequest) error { return nil }
-func (m *mockLinkRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.LinkRequest, error) {
-	return nil, nil
+type mockLinkRepo struct {
+	reqs map[uuid.UUID]*model.LinkRequest
 }
-func (m *mockLinkRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status model.LinkRequestStatus) error {
+
+func (m *mockLinkRepo) Create(ctx context.Context, req *model.LinkRequest) error {
+	if req.ID == uuid.Nil {
+		req.ID = uuid.New()
+	}
+	if m.reqs == nil {
+		m.reqs = make(map[uuid.UUID]*model.LinkRequest)
+	}
+	m.reqs[req.ID] = req
 	return nil
 }
-func (m *mockLinkRepo) ListForUser(ctx context.Context, userID uuid.UUID) ([]model.LinkRequest, error) {
-	return nil, nil
+
+func (m *mockLinkRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.LinkRequest, error) {
+	if m.reqs != nil {
+		if r, ok := m.reqs[id]; ok {
+			return r, nil
+		}
+	}
+	return nil, repository.ErrLinkRequestNotFound
 }
+
+func (m *mockLinkRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status model.LinkRequestStatus) error {
+	if m.reqs != nil {
+		if r, ok := m.reqs[id]; ok {
+			r.Status = status
+			now := time.Now()
+			r.DecidedAt = &now
+			return nil
+		}
+	}
+	return repository.ErrLinkRequestNotFound
+}
+
+func (m *mockLinkRepo) ListForUser(ctx context.Context, userID uuid.UUID) ([]model.LinkRequest, error) {
+	res := make([]model.LinkRequest, 0)
+	if m.reqs != nil {
+		for _, r := range m.reqs {
+			if r.RequestedBy == userID || r.TargetUserID == userID {
+				res = append(res, *r)
+			}
+		}
+	}
+	return res, nil
+}
+
 func (m *mockLinkRepo) ListByWallet(ctx context.Context, walletID uuid.UUID) ([]model.LinkRequest, error) {
+	res := make([]model.LinkRequest, 0)
+	if m.reqs != nil {
+		for _, r := range m.reqs {
+			if r.WalletID == walletID {
+				res = append(res, *r)
+			}
+		}
+	}
+	return res, nil
+}
+
+func (m *mockLinkRepo) CancelPendingForWallet(ctx context.Context, walletID uuid.UUID) error {
+	if m.reqs != nil {
+		for _, r := range m.reqs {
+			if r.WalletID == walletID && r.Status == model.LinkRequestStatusPending {
+				r.Status = model.LinkRequestStatusRejected
+			}
+		}
+	}
+	return nil
+}
+
+func (m *mockLinkRepo) GetPendingByWallet(ctx context.Context, walletID uuid.UUID) (*model.LinkRequest, error) {
+	if m.reqs != nil {
+		for _, r := range m.reqs {
+			if r.WalletID == walletID && r.Status == model.LinkRequestStatusPending {
+				return r, nil
+			}
+		}
+	}
 	return nil, nil
 }
 
@@ -741,5 +915,349 @@ func TestDevFixturesSeedHandler(t *testing.T) {
 	}
 	if auth.CheckPassword("", admin.PasswordHash) || auth.CheckPassword("password", admin.PasswordHash) || auth.CheckPassword("test_admin", admin.PasswordHash) {
 		t.Errorf("fixture password should not match predictable or empty strings")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// F1 Remediation Tests: Sesi Belanja (Batch Entry Creation & Autocomplete Suggestions)
+// -----------------------------------------------------------------------------
+
+func TestF1_BatchEntryCreationAndItemSuggestions(t *testing.T) {
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	auditRepo := &mockAuditRepo{}
+
+	creatorID := uuid.New()
+	otherUserID := uuid.New()
+
+	wallet1 := &model.Wallet{ID: uuid.New(), Name: "Rendy - Kopi", CreatorID: creatorID}
+	wallet2 := &model.Wallet{ID: uuid.New(), Name: "Rendy - Makan", CreatorID: creatorID}
+	otherWallet := &model.Wallet{ID: uuid.New(), Name: "Other Wallet", CreatorID: otherUserID}
+
+	walletRepo.wallets[wallet1.ID] = wallet1
+	walletRepo.wallets[wallet2.ID] = wallet2
+	walletRepo.wallets[otherWallet.ID] = otherWallet
+
+	entrySvc := service.NewEntryService(entryRepo, walletRepo, auditRepo)
+
+	// 1. Batch creation of multiple rows in one session by creator
+	batchReq := model.BatchEntriesRequest{
+		Entries: []model.BatchEntryItem{
+			{
+				WalletID: wallet1.ID,
+				Type:     model.EntryTypeTitipan,
+				Amount:   25000,
+				ItemName: "Americano",
+				Note:     "Less sugar",
+			},
+			{
+				WalletID: wallet2.ID,
+				Type:     model.EntryTypeTitipan,
+				Amount:   50000,
+				ItemName: "Nasi Padang",
+				Note:     "Ayam bakar",
+			},
+		},
+	}
+
+	resp, err := entrySvc.CreateBatchEntries(context.Background(), creatorID, model.RoleUser, batchReq)
+	if err != nil {
+		t.Fatalf("expected batch creation to succeed, got error: %v", err)
+	}
+	if resp.Count != 2 {
+		t.Errorf("expected count 2, got %d", resp.Count)
+	}
+	if resp.TotalAmount != 75000 {
+		t.Errorf("expected total amount 75000, got %d", resp.TotalAmount)
+	}
+
+	// 2. Batch creation rejected if any wallet does not belong to creator
+	badBatchReq := model.BatchEntriesRequest{
+		Entries: []model.BatchEntryItem{
+			{
+				WalletID: wallet1.ID,
+				Type:     model.EntryTypeTitipan,
+				Amount:   20000,
+				ItemName: "Latte",
+			},
+			{
+				WalletID: otherWallet.ID, // Not owned by creatorID
+				Type:     model.EntryTypeTitipan,
+				Amount:   30000,
+				ItemName: "Bakmi",
+			},
+		},
+	}
+
+	_, err = entrySvc.CreateBatchEntries(context.Background(), creatorID, model.RoleUser, badBatchReq)
+	if err == nil {
+		t.Fatalf("expected error when batch contains unauthorized wallet, got nil")
+	}
+
+	// 3. Autocomplete / item suggestions for wallet1
+	suggestions, err := entrySvc.GetItemSuggestions(context.Background(), wallet1.ID, creatorID, model.RoleUser, "", 10)
+	if err != nil {
+		t.Fatalf("expected item suggestions to succeed, got %v", err)
+	}
+	if len(suggestions) != 1 || suggestions[0].ItemName != "Americano" {
+		t.Errorf("expected suggestion 'Americano', got: %+v", suggestions)
+	}
+	if suggestions[0].LastPrice != 25000 {
+		t.Errorf("expected last price 25000, got %d", suggestions[0].LastPrice)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// F3 Remediation Tests: Transaksi Koreksi & Creator-Only Ledger Writes
+// -----------------------------------------------------------------------------
+
+func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	auditRepo := &mockAuditRepo{}
+
+	creatorID := uuid.New()
+	ownerID := uuid.New()
+	adminID := uuid.New()
+
+	wallet1 := &model.Wallet{ID: uuid.New(), Name: "Dompet Makan", CreatorID: creatorID, OwnerID: &ownerID}
+	wallet2 := &model.Wallet{ID: uuid.New(), Name: "Dompet Snack", CreatorID: creatorID}
+	walletRepo.wallets[wallet1.ID] = wallet1
+	walletRepo.wallets[wallet2.ID] = wallet2
+
+	entrySvc := service.NewEntryService(entryRepo, walletRepo, auditRepo)
+
+	// 1. Owner attempts to write titipan -> MUST BE REJECTED (403 / permission denied)
+	_, _, err := entrySvc.CreateEntry(context.Background(), ownerID, model.RoleUser, service.CreateEntryRequest{
+		WalletID: wallet1.ID,
+		Type:     model.EntryTypeTitipan,
+		Amount:   50000,
+		ItemName: "Nasi Ayam",
+	})
+	if err != service.ErrWalletPermissionDenied {
+		t.Fatalf("expected ErrWalletPermissionDenied for owner financial write, got: %v", err)
+	}
+
+	// 2. Admin attempts to write titipan -> MUST BE REJECTED
+	_, _, err = entrySvc.CreateEntry(context.Background(), adminID, model.RoleAdmin, service.CreateEntryRequest{
+		WalletID: wallet1.ID,
+		Type:     model.EntryTypeTitipan,
+		Amount:   50000,
+		ItemName: "Nasi Ayam",
+	})
+	if err != service.ErrWalletPermissionDenied {
+		t.Fatalf("expected ErrWalletPermissionDenied for admin financial write, got: %v", err)
+	}
+
+	// 3. Creator writes titipan -> SUCCESS
+	origEntry, _, err := entrySvc.CreateEntry(context.Background(), creatorID, model.RoleUser, service.CreateEntryRequest{
+		WalletID: wallet1.ID,
+		Type:     model.EntryTypeTitipan,
+		Amount:   50000,
+		ItemName: "Nasi Uduk",
+	})
+	if err != nil {
+		t.Fatalf("expected creator entry creation to succeed, got: %v", err)
+	}
+
+	// 4. Creator corrects titipan with nominal adjustment (-10000)
+	corrEntry, _, err := entrySvc.CreateEntry(context.Background(), creatorID, model.RoleUser, service.CreateEntryRequest{
+		WalletID:         wallet1.ID,
+		Type:             model.EntryTypeKoreksi,
+		Amount:           -10000,
+		ItemName:         "Nasi Uduk",
+		CorrectsEntryID:  &origEntry.ID,
+		CorrectionReason: "Salah input harga awal",
+	})
+	if err != nil {
+		t.Fatalf("expected correction creation to succeed, got: %v", err)
+	}
+	if *corrEntry.CorrectsEntryID != origEntry.ID {
+		t.Errorf("expected corrects_entry_id to match original entry ID")
+	}
+
+	// 5. Move entry to another creator wallet ("Pindahkan ke dompet lain")
+	srcCorr, dstNew, err := entrySvc.MoveEntry(context.Background(), creatorID, model.RoleUser, service.MoveEntryRequest{
+		SourceWalletID: wallet1.ID,
+		TargetWalletID: wallet2.ID,
+		EntryID:        origEntry.ID,
+		Notes:          "Salah pilih dompet",
+	})
+	if err != nil {
+		t.Fatalf("expected move entry to succeed, got: %v", err)
+	}
+	if srcCorr.Amount != -origEntry.Amount {
+		t.Errorf("expected source correction amount %d, got %d", -origEntry.Amount, srcCorr.Amount)
+	}
+	if dstNew.WalletID != wallet2.ID {
+		t.Errorf("expected target entry in wallet2, got %s", dstNew.WalletID)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// F6 Remediation Tests: Linking Pemilik & Creator Unlink Owner
+// -----------------------------------------------------------------------------
+
+func TestF6_OwnerLinkingAndUnlinking(t *testing.T) {
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	linkRepo := &mockLinkRepo{reqs: make(map[uuid.UUID]*model.LinkRequest)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	auditRepo := &mockAuditRepo{}
+
+	creator := &model.User{ID: uuid.New(), Username: "rahmat_ob", Role: model.RoleUser, TokenVersion: 1}
+	owner := &model.User{ID: uuid.New(), Username: "rendy_penitip", Role: model.RoleUser, TokenVersion: 1}
+	_ = userRepo.Create(context.Background(), creator)
+	_ = userRepo.Create(context.Background(), owner)
+
+	wallet := &model.Wallet{ID: uuid.New(), Name: "Rendy - Kopi", CreatorID: creator.ID}
+	walletRepo.wallets[wallet.ID] = wallet
+
+	linkSvc := service.NewLinkService(linkRepo, walletRepo, userRepo, auditRepo)
+	walletSvc := service.NewWalletService(walletRepo, userRepo, entryRepo, auditRepo)
+
+	// 1. Creator requests link to owner username
+	linkReq, err := linkSvc.CreateLinkRequest(context.Background(), creator.ID, wallet.ID, owner.Username)
+	if err != nil {
+		t.Fatalf("expected create link request to succeed, got: %v", err)
+	}
+	if linkReq.Status != model.LinkRequestStatusPending {
+		t.Errorf("expected status pending, got %s", linkReq.Status)
+	}
+
+	// 2. Owner approves link request -> wallet owner set
+	approvedReq, err := linkSvc.ApproveLinkRequest(context.Background(), owner.ID, linkReq.ID)
+	if err != nil {
+		t.Fatalf("expected approve link request to succeed, got: %v", err)
+	}
+	if approvedReq.Status != model.LinkRequestStatusApproved {
+		t.Errorf("expected status approved, got %s", approvedReq.Status)
+	}
+	if wallet.OwnerID == nil || *wallet.OwnerID != owner.ID {
+		t.Errorf("expected wallet owner to be set to %s", owner.ID)
+	}
+
+	// 3. Owner attempts to rename or archive wallet -> MUST BE DENIED
+	err = walletSvc.UpdateWalletName(context.Background(), wallet.ID, owner.ID, model.RoleUser, "Hacked Name")
+	if err != service.ErrWalletPermissionDenied {
+		t.Errorf("expected ErrWalletPermissionDenied for owner renaming wallet, got: %v", err)
+	}
+	err = walletSvc.SetWalletArchived(context.Background(), wallet.ID, owner.ID, model.RoleUser, true)
+	if err != service.ErrWalletPermissionDenied {
+		t.Errorf("expected ErrWalletPermissionDenied for owner archiving wallet, got: %v", err)
+	}
+
+	// 4. Creator disconnects / unlinks owner -> owner is removed, wallet intact
+	err = walletSvc.UnlinkWallet(context.Background(), wallet.ID, creator.ID, model.RoleUser)
+	if err != nil {
+		t.Fatalf("expected unlink wallet to succeed, got: %v", err)
+	}
+	if wallet.OwnerID != nil {
+		t.Errorf("expected wallet owner_id to be nil after unlink")
+	}
+
+	// 5. Former owner has no permission on wallet after unlink
+	authz, _ := walletRepo.IsUserAuthorized(context.Background(), wallet.ID, owner.ID)
+	if authz {
+		t.Errorf("expected former owner to no longer be authorized after unlink")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// F8 Remediation Tests: Insight Pembuat (Money Outside & Trends)
+// -----------------------------------------------------------------------------
+
+func TestF8_CreatorInsightsAndTrends(t *testing.T) {
+	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
+	auditRepo := &mockAuditRepo{}
+
+	creatorID := uuid.New()
+
+	w1 := &model.Wallet{ID: uuid.New(), Name: "Buku 1", CreatorID: creatorID, Balance: 75000}
+	w2 := &model.Wallet{ID: uuid.New(), Name: "Buku 2", CreatorID: creatorID, Balance: 25000}
+	w3 := &model.Wallet{ID: uuid.New(), Name: "Buku 3 Arsip", CreatorID: creatorID, Balance: 50000}
+	now := time.Now()
+	w3.ArchivedAt = &now
+
+	walletRepo.wallets[w1.ID] = w1
+	walletRepo.wallets[w2.ID] = w2
+	walletRepo.wallets[w3.ID] = w3
+
+	walletSvc := service.NewWalletService(walletRepo, userRepo, entryRepo, auditRepo)
+
+	insights, err := walletSvc.GetCreatorInsights(context.Background(), creatorID, "month")
+	if err != nil {
+		t.Fatalf("expected GetCreatorInsights to succeed, got: %v", err)
+	}
+
+	if insights.TotalOutstanding != 100000 {
+		t.Errorf("expected total money outside 100000, got %d", insights.TotalOutstanding)
+	}
+	if insights.TotalActiveWallets != 2 {
+		t.Errorf("expected 2 active wallets, got %d", insights.TotalActiveWallets)
+	}
+	if insights.TotalArchivedWallets != 1 {
+		t.Errorf("expected 1 archived wallet, got %d", insights.TotalArchivedWallets)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// F10 Remediation Tests: Token Renewal & Session Revocation
+// -----------------------------------------------------------------------------
+
+func TestF10_AuthRenewAndTokenRevocation(t *testing.T) {
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager("test-secret-key-32-chars-minimum-length!", 72*time.Hour)
+
+	authSvc := service.NewAuthService(userRepo, auditRepo, jwtMgr)
+
+	// 1. Register user
+	userResp, token, expiresAt, err := authSvc.Register(context.Background(), "test_user_f10", "Secret123!")
+	if err != nil {
+		t.Fatalf("expected register to succeed, got: %v", err)
+	}
+	if token == "" {
+		t.Errorf("expected valid JWT token")
+	}
+	if expiresAt.Before(time.Now().Add(71 * time.Hour)) {
+		t.Errorf("expected expiry in ~72 hours, got: %v", expiresAt)
+	}
+
+	// 2. Renew token
+	renewedUser, newToken, newExpiresAt, err := authSvc.RenewToken(context.Background(), userResp.ID, 1)
+	if err != nil {
+		t.Fatalf("expected token renewal to succeed, got: %v", err)
+	}
+	if renewedUser.Username != "test_user_f10" {
+		t.Errorf("expected username test_user_f10, got %s", renewedUser.Username)
+	}
+	if newToken == "" || newExpiresAt.IsZero() {
+		t.Errorf("expected valid renewed token and expiresAt")
+	}
+
+	// 3. User changes password -> token_version incremented
+	err = authSvc.ResetPassword(context.Background(), userResp.ID, "NewSecret456!")
+	if err != nil {
+		t.Fatalf("expected password change to succeed, got: %v", err)
+	}
+
+	// 4. Old token version (1) is now REVOKED when checked
+	_, err = authSvc.GetCurrentUser(context.Background(), userResp.ID, 1)
+	if err != service.ErrTokenRevoked {
+		t.Errorf("expected ErrTokenRevoked for old token_version, got: %v", err)
+	}
+
+	// 5. Admin reset password also revokes token
+	adminID := uuid.New()
+	err = authSvc.AdminResetPassword(context.Background(), adminID, "test_user_f10", "AdminSecret789!")
+	if err != nil {
+		t.Fatalf("expected admin password reset to succeed, got: %v", err)
+	}
+	_, err = authSvc.GetCurrentUser(context.Background(), userResp.ID, 2)
+	if err != service.ErrTokenRevoked {
+		t.Errorf("expected ErrTokenRevoked after admin reset password, got: %v", err)
 	}
 }
