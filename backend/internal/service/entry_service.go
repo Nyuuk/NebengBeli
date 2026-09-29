@@ -19,6 +19,9 @@ var (
 	ErrItemNameRequired         = errors.New("item_name is required")
 	ErrMissingCorrectionRef     = errors.New("correction entry must specify corrects_entry_id")
 	ErrCannotCorrectNonExisting = errors.New("referenced entry for correction does not exist")
+	ErrCannotCorrectCorrection  = errors.New("cannot correct an entry of type koreksi")
+	ErrCorrectionReasonRequired = errors.New("correction_reason is required and must be a valid PRD reason (salah harga, batal, salah dompet, or lainnya)")
+	ErrCorrectionNoDelta        = errors.New("target nominal is equal to current effective amount; delta is zero")
 	ErrDestinationArchived      = errors.New("destination wallet is archived")
 )
 
@@ -26,7 +29,9 @@ type CreateEntryRequest struct {
 	ClientID         *uuid.UUID      `json:"client_id,omitempty"`
 	WalletID         uuid.UUID       `json:"wallet_id"`
 	Type             model.EntryType `json:"type"`
-	Amount           int64           `json:"amount"`
+	Amount           int64           `json:"amount"`                  // Nominal for titipan/topup, or target final nominal for koreksi
+	TargetAmount     *int64          `json:"target_amount,omitempty"` // Explicit target final nominal for koreksi
+	FinalNominal     *int64          `json:"final_nominal,omitempty"` // Alias for target final nominal
 	ItemName         string          `json:"item_name"`
 	Note             string          `json:"note"`
 	CorrectsEntryID  *uuid.UUID      `json:"corrects_entry_id,omitempty"`
@@ -35,10 +40,13 @@ type CreateEntryRequest struct {
 }
 
 type MoveEntryRequest struct {
-	SourceWalletID uuid.UUID `json:"source_wallet_id"`
-	TargetWalletID uuid.UUID `json:"target_wallet_id"`
-	EntryID        uuid.UUID `json:"entry_id"`
-	Notes          string    `json:"notes"`
+	ClientID           *uuid.UUID `json:"client_id,omitempty"`
+	CorrectionClientID *uuid.UUID `json:"correction_client_id,omitempty"`
+	TargetClientID     *uuid.UUID `json:"target_client_id,omitempty"`
+	SourceWalletID     uuid.UUID  `json:"source_wallet_id"`
+	TargetWalletID     uuid.UUID  `json:"target_wallet_id"`
+	EntryID            uuid.UUID  `json:"entry_id"`
+	Notes              string     `json:"notes"`
 }
 
 type EntryService interface {
@@ -73,10 +81,6 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		return nil, false, errors.New("wallet_id is required")
 	}
 
-	if req.ItemName == "" {
-		return nil, false, ErrItemNameRequired
-	}
-
 	// 1. Authorization and active status check: Only the wallet creator can record financial ledger entries
 	wallet, err := s.walletRepo.GetByID(ctx, req.WalletID)
 	if err != nil {
@@ -89,31 +93,44 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		return nil, false, ErrArchivedWallet
 	}
 
-	// 3. Normalize amount and type
-	if req.Amount == 0 {
-		return nil, false, ErrZeroAmount
-	}
-
 	var signedAmount int64
+	itemName := req.ItemName
+	note := req.Note
+
 	switch req.Type {
 	case model.EntryTypeTitipan:
+		if req.Amount == 0 {
+			return nil, false, ErrZeroAmount
+		}
+		if itemName == "" {
+			return nil, false, ErrItemNameRequired
+		}
 		// Titipan represents debt/spending on behalf (+signed)
 		if req.Amount < 0 {
 			signedAmount = -req.Amount
 		} else {
 			signedAmount = req.Amount
 		}
+
 	case model.EntryTypeTopup:
+		if req.Amount == 0 {
+			return nil, false, ErrZeroAmount
+		}
+		if itemName == "" {
+			itemName = "Top-up"
+		}
 		// Topup represents payment/settlement (-signed)
 		if req.Amount > 0 {
 			signedAmount = -req.Amount
 		} else {
 			signedAmount = req.Amount
 		}
+
 	case model.EntryTypeKoreksi:
 		if req.CorrectsEntryID == nil || *req.CorrectsEntryID == uuid.Nil {
 			return nil, false, ErrMissingCorrectionRef
 		}
+
 		// Verify referenced entry
 		refEntry, err := s.entryRepo.GetByID(ctx, *req.CorrectsEntryID)
 		if err != nil {
@@ -123,10 +140,63 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 			return nil, false, errors.New("referenced entry does not belong to this wallet")
 		}
 		if refEntry.Type == model.EntryTypeKoreksi {
-			return nil, false, errors.New("cannot correct an entry of type koreksi")
+			return nil, false, ErrCannotCorrectCorrection
 		}
-		// Koreksi preserves whatever sign is specified
-		signedAmount = req.Amount
+
+		// Validate correction reason against PRD requirements
+		if !IsValidCorrectionReason(req.CorrectionReason) {
+			return nil, false, ErrCorrectionReasonRequired
+		}
+
+		// Auto-populate item_name and note from referenced entry if omitted
+		if itemName == "" {
+			itemName = refEntry.ItemName
+		}
+		if note == "" {
+			note = fmt.Sprintf("Koreksi: %s", req.CorrectionReason)
+		}
+
+		// Determine target final nominal (nominal yang benar)
+		var targetNominal int64
+		if req.TargetAmount != nil {
+			targetNominal = *req.TargetAmount
+		} else if req.FinalNominal != nil {
+			targetNominal = *req.FinalNominal
+		} else {
+			targetNominal = req.Amount
+		}
+
+		// Target nominal is non-negative
+		if targetNominal < 0 {
+			targetNominal = -targetNominal
+		}
+
+		// Current effective signed amount of original entry (asli + prior corrections)
+		currentEffective := refEntry.EffectiveAmount
+
+		// Target signed amount based on referenced entry type
+		var targetSigned int64
+		switch refEntry.Type {
+		case model.EntryTypeTitipan:
+			// Titipan is +signed
+			targetSigned = targetNominal
+		case model.EntryTypeTopup:
+			// Topup is -signed
+			if targetNominal == 0 {
+				targetSigned = 0
+			} else {
+				targetSigned = -targetNominal
+			}
+		}
+
+		// Server-side delta calculation
+		delta := targetSigned - currentEffective
+		if delta == 0 {
+			return nil, false, ErrCorrectionNoDelta
+		}
+
+		signedAmount = delta
+
 	default:
 		return nil, false, ErrInvalidEntryType
 	}
@@ -149,8 +219,8 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		WalletID:         req.WalletID,
 		Type:             req.Type,
 		Amount:           signedAmount,
-		ItemName:         req.ItemName,
-		Note:             req.Note,
+		ItemName:         itemName,
+		Note:             note,
 		CorrectsEntryID:  req.CorrectsEntryID,
 		CorrectionReason: req.CorrectionReason,
 		OccurredAt:       occurredAt,
@@ -167,7 +237,7 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 			"wallet_id": req.WalletID,
 			"type":      req.Type,
 			"amount":    signedAmount,
-			"item_name": req.ItemName,
+			"item_name": itemName,
 		})
 		entityID := created.ID.String()
 		action := model.AuditActionEntryCreate
@@ -211,7 +281,19 @@ func (s *entryService) MoveEntry(ctx context.Context, userID uuid.UUID, userRole
 		return nil, nil, ErrDestinationArchived
 	}
 
-	corrEntry, newEntry, err := s.entryRepo.MoveEntry(ctx, req.SourceWalletID, req.TargetWalletID, req.EntryID, userID, req.Notes)
+	// Derive client IDs if single client_id was passed
+	corrCID := req.CorrectionClientID
+	tgtCID := req.TargetClientID
+	if corrCID == nil && req.ClientID != nil && *req.ClientID != uuid.Nil {
+		corrCID = req.ClientID
+	}
+	if tgtCID == nil && req.ClientID != nil && *req.ClientID != uuid.Nil {
+		// Use distinct deterministic UUID for target if base client_id is given
+		derived := uuid.NewSHA1(*req.ClientID, []byte("target-entry"))
+		tgtCID = &derived
+	}
+
+	corrEntry, newEntry, err := s.entryRepo.MoveEntry(ctx, req.SourceWalletID, req.TargetWalletID, req.EntryID, userID, req.Notes, corrCID, tgtCID)
 	if err != nil {
 		return nil, nil, err
 	}

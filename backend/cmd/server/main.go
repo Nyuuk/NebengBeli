@@ -171,6 +171,11 @@ func main() {
 				admin.GET("/wallets", adminHandler.ListWallets)
 				admin.GET("/audit-logs", adminHandler.ListAuditLogs)
 				admin.GET("/stats", adminHandler.GetStats)
+				admin.GET("/entries", adminHandler.ListEntries)
+				admin.GET("/transactions", adminHandler.ListEntries)
+				admin.GET("/trends", adminHandler.GetTrends)
+				admin.GET("/creators", adminHandler.ListCreators)
+				admin.GET("/summary", adminHandler.GetPeriodSummary)
 			}
 		}
 

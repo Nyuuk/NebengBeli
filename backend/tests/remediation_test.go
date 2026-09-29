@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -41,7 +43,15 @@ func (m *mockEntryRepo) Create(ctx context.Context, entry *model.Entry) (*model.
 
 func (m *mockEntryRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Entry, error) {
 	if e, ok := m.entries[id]; ok {
-		return e, nil
+		entryCopy := *e
+		var eff int64 = entryCopy.Amount
+		for _, c := range m.entries {
+			if c.CorrectsEntryID != nil && *c.CorrectsEntryID == id {
+				eff += c.Amount
+			}
+		}
+		entryCopy.EffectiveAmount = eff
+		return &entryCopy, nil
 	}
 	return nil, repository.ErrEntryNotFound
 }
@@ -49,7 +59,15 @@ func (m *mockEntryRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Entry
 func (m *mockEntryRepo) GetByClientID(ctx context.Context, clientID uuid.UUID) (*model.Entry, error) {
 	for _, e := range m.entries {
 		if e.ClientID == clientID {
-			return e, nil
+			entryCopy := *e
+			var eff int64 = entryCopy.Amount
+			for _, c := range m.entries {
+				if c.CorrectsEntryID != nil && *c.CorrectsEntryID == e.ID {
+					eff += c.Amount
+				}
+			}
+			entryCopy.EffectiveAmount = eff
+			return &entryCopy, nil
 		}
 	}
 	return nil, nil
@@ -57,34 +75,189 @@ func (m *mockEntryRepo) GetByClientID(ctx context.Context, clientID uuid.UUID) (
 
 func (m *mockEntryRepo) ListByWallet(ctx context.Context, filter repository.EntryFilter) ([]model.Entry, int64, error) {
 	res := make([]model.Entry, 0)
-	return res, 0, nil
+	for _, e := range m.entries {
+		if e.WalletID == filter.WalletID {
+			if filter.Type != nil && e.Type != *filter.Type {
+				continue
+			}
+			if filter.StartDate != nil && e.OccurredAt.Before(*filter.StartDate) {
+				continue
+			}
+			if filter.EndDate != nil && e.OccurredAt.After(*filter.EndDate) {
+				continue
+			}
+			res = append(res, *e)
+		}
+	}
+	return res, int64(len(res)), nil
+}
+
+func (m *mockEntryRepo) ListAdminEntries(ctx context.Context, filter repository.AdminEntryFilter) ([]model.Entry, int64, *model.AdminPeriodSummary, error) {
+	res := make([]model.Entry, 0)
+	summary := &model.AdminPeriodSummary{}
+	for _, e := range m.entries {
+		if filter.WalletID != nil && e.WalletID != *filter.WalletID {
+			continue
+		}
+		if filter.Type != nil && e.Type != *filter.Type {
+			continue
+		}
+		if filter.StartDate != nil && e.OccurredAt.Before(*filter.StartDate) {
+			continue
+		}
+		if filter.EndDate != nil && e.OccurredAt.After(*filter.EndDate) {
+			continue
+		}
+		res = append(res, *e)
+		switch e.Type {
+		case model.EntryTypeTitipan:
+			summary.TotalTitipanCount++
+			summary.TotalTitipanAmount += e.Amount
+		case model.EntryTypeTopup:
+			summary.TotalTopupCount++
+			summary.TotalTopupAmount += e.Amount
+		case model.EntryTypeKoreksi:
+			summary.TotalKoreksiCount++
+			summary.TotalKoreksiAmount += e.Amount
+		}
+		summary.TotalCount++
+		vol := e.Amount
+		if vol < 0 {
+			vol = -vol
+		}
+		summary.TotalVolume += vol
+		summary.NetBalance += e.Amount
+	}
+	return res, int64(len(res)), summary, nil
 }
 
 func (m *mockEntryRepo) GetWalletSummary(ctx context.Context, walletID uuid.UUID) (*model.StatementSummary, error) {
-	return &model.StatementSummary{}, nil
+	return m.GetWalletSummaryWithFilter(ctx, walletID, nil, nil)
 }
 
-func (m *mockEntryRepo) MoveEntry(ctx context.Context, sourceWalletID, targetWalletID, entryID, createdBy uuid.UUID, notes string) (*model.Entry, *model.Entry, error) {
+func (m *mockEntryRepo) GetWalletSummaryWithFilter(ctx context.Context, walletID uuid.UUID, startDate, endDate *time.Time) (*model.StatementSummary, error) {
+	summary := &model.StatementSummary{}
+	for _, e := range m.entries {
+		if e.WalletID == walletID {
+			switch e.Type {
+			case model.EntryTypeTitipan:
+				summary.TotalTitipan += e.Amount
+			case model.EntryTypeTopup:
+				summary.TotalTopup += e.Amount
+			case model.EntryTypeKoreksi:
+				summary.TotalKoreksi += e.Amount
+			}
+			summary.CurrentBalance += e.Amount
+			summary.EntryCount++
+
+			if startDate != nil && e.OccurredAt.Before(*startDate) {
+				summary.StartingBalance += e.Amount
+			}
+			if startDate != nil {
+				inRange := !e.OccurredAt.Before(*startDate) && (endDate == nil || !e.OccurredAt.After(*endDate))
+				if inRange {
+					summary.PeriodTotal += e.Amount
+				}
+			}
+		}
+	}
+	if startDate != nil {
+		summary.EndingBalance = summary.StartingBalance + summary.PeriodTotal
+	} else {
+		summary.StartingBalance = 0
+		summary.PeriodTotal = summary.CurrentBalance
+		summary.EndingBalance = summary.CurrentBalance
+	}
+	return summary, nil
+}
+
+func (m *mockEntryRepo) MoveEntry(ctx context.Context, sourceWalletID, targetWalletID, entryID, createdBy uuid.UUID, notes string, correctionClientID, targetClientID *uuid.UUID) (*model.Entry, *model.Entry, error) {
 	orig, ok := m.entries[entryID]
 	if !ok {
 		return nil, nil, repository.ErrEntryNotFound
 	}
 	if orig.Type == model.EntryTypeKoreksi {
-		return nil, nil, service.ErrInvalidEntryType
+		return nil, nil, errors.New("cannot move an entry of type koreksi")
 	}
+
+	var eff int64 = orig.Amount
+	for _, c := range m.entries {
+		if c.CorrectsEntryID != nil && *c.CorrectsEntryID == entryID {
+			eff += c.Amount
+		}
+	}
+
+	cID := uuid.New()
+	if correctionClientID != nil && *correctionClientID != uuid.Nil {
+		cID = *correctionClientID
+	}
+	tID := uuid.New()
+	if targetClientID != nil && *targetClientID != uuid.Nil {
+		tID = *targetClientID
+	}
+
+	var existingCorr, existingTgt *model.Entry
+	for _, e := range m.entries {
+		if e.ClientID == cID {
+			existingCorr = e
+		}
+		if e.ClientID == tID {
+			existingTgt = e
+		}
+	}
+	if existingCorr != nil && existingTgt != nil {
+		return existingCorr, existingTgt, nil
+	}
+
 	corr := &model.Entry{
-		ID:       uuid.New(),
-		WalletID: sourceWalletID,
-		Type:     model.EntryTypeKoreksi,
-		Amount:   -orig.Amount,
+		ID:               uuid.New(),
+		ClientID:         cID,
+		WalletID:         sourceWalletID,
+		Type:             model.EntryTypeKoreksi,
+		Amount:           -eff,
+		ItemName:         orig.ItemName,
+		Note:             fmt.Sprintf("Pindah ke dompet lain. %s", notes),
+		CorrectsEntryID:  &entryID,
+		CorrectionReason: "salah dompet",
+		OccurredAt:       time.Now(),
+		CreatedBy:        createdBy,
+		CreatedAt:        time.Now(),
 	}
 	newE := &model.Entry{
-		ID:       uuid.New(),
-		WalletID: targetWalletID,
-		Type:     orig.Type,
-		Amount:   orig.Amount,
+		ID:         uuid.New(),
+		ClientID:   tID,
+		WalletID:   targetWalletID,
+		Type:       orig.Type,
+		Amount:     eff,
+		ItemName:   orig.ItemName,
+		Note:       fmt.Sprintf("Pindahan dari dompet asal. %s", notes),
+		OccurredAt: orig.OccurredAt,
+		CreatedBy:  createdBy,
+		CreatedAt:  time.Now(),
 	}
+	m.entries[corr.ID] = corr
+	m.entries[newE.ID] = newE
 	return corr, newE, nil
+}
+
+func (m *mockEntryRepo) GetAdminTrends(ctx context.Context) (*model.InsightTrends, error) {
+	return &model.InsightTrends{
+		Daily:   []model.TrendPoint{},
+		Weekly:  []model.TrendPoint{},
+		Monthly: []model.TrendPoint{},
+	}, nil
+}
+
+func (m *mockEntryRepo) GetAdminCreators(ctx context.Context) ([]model.AdminCreatorDetail, error) {
+	return []model.AdminCreatorDetail{}, nil
+}
+
+func (m *mockEntryRepo) GetAdminStatsBreakdown(ctx context.Context) (map[string]map[string]int64, error) {
+	return map[string]map[string]int64{
+		"titipan": {"count": 0, "total_amount": 0, "total_volume": 0},
+		"topup":   {"count": 0, "total_amount": 0, "total_volume": 0},
+		"koreksi": {"count": 0, "total_amount": 0, "total_volume": 0},
+	}, nil
 }
 
 func (m *mockEntryRepo) CreateBatch(ctx context.Context, entries []model.Entry) ([]model.Entry, error) {
@@ -1060,11 +1233,11 @@ func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
 		t.Fatalf("expected creator entry creation to succeed, got: %v", err)
 	}
 
-	// 4. Creator corrects titipan with nominal adjustment (-10000)
+	// 4. Creator corrects titipan with nominal yang benar (final nominal 40000)
 	corrEntry, _, err := entrySvc.CreateEntry(context.Background(), creatorID, model.RoleUser, service.CreateEntryRequest{
 		WalletID:         wallet1.ID,
 		Type:             model.EntryTypeKoreksi,
-		Amount:           -10000,
+		Amount:           40000, // Final nominal yang benar
 		ItemName:         "Nasi Uduk",
 		CorrectsEntryID:  &origEntry.ID,
 		CorrectionReason: "Salah input harga awal",
@@ -1072,11 +1245,15 @@ func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected correction creation to succeed, got: %v", err)
 	}
+	if corrEntry.Amount != -10000 {
+		t.Errorf("expected correction delta amount -10000, got %d", corrEntry.Amount)
+	}
 	if *corrEntry.CorrectsEntryID != origEntry.ID {
 		t.Errorf("expected corrects_entry_id to match original entry ID")
 	}
 
 	// 5. Move entry to another creator wallet ("Pindahkan ke dompet lain")
+	// Must preserve effective current value (40000) rather than obsolete original nominal (50000)
 	srcCorr, dstNew, err := entrySvc.MoveEntry(context.Background(), creatorID, model.RoleUser, service.MoveEntryRequest{
 		SourceWalletID: wallet1.ID,
 		TargetWalletID: wallet2.ID,
@@ -1086,8 +1263,11 @@ func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected move entry to succeed, got: %v", err)
 	}
-	if srcCorr.Amount != -origEntry.Amount {
-		t.Errorf("expected source correction amount %d, got %d", -origEntry.Amount, srcCorr.Amount)
+	if srcCorr.Amount != -40000 {
+		t.Errorf("expected source correction amount -40000 (offsetting effective value), got %d", srcCorr.Amount)
+	}
+	if dstNew.Amount != 40000 {
+		t.Errorf("expected destination new entry amount 40000 (preserving effective value), got %d", dstNew.Amount)
 	}
 	if dstNew.WalletID != wallet2.ID {
 		t.Errorf("expected target entry in wallet2, got %s", dstNew.WalletID)
