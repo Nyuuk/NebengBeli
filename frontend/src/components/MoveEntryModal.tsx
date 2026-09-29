@@ -14,8 +14,12 @@ import {
   Typography,
   Alert,
 } from '@mui/material';
-import { moveEntryApi } from '../api/entries';
+import CloudOffIcon from '@mui/icons-material/CloudOff';
+import { moveEntryAdapter } from '../api/entries';
 import { getWalletsApi } from '../api/wallets';
+import { getCachedWallets } from '../offline/db';
+import { useOnlineStatus } from '../context/OnlineStatusContext';
+import { useAuth } from '../context/AuthContext';
 import { formatRupiah } from './BalanceCard';
 import { Entry, Wallet } from '../types';
 
@@ -24,7 +28,7 @@ interface MoveEntryModalProps {
   sourceWalletId: string;
   targetEntry: Entry | null;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (isOffline?: boolean) => void;
 }
 
 export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
@@ -34,6 +38,8 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { isOnline, refreshPendingCount } = useOnlineStatus();
+  const { user } = useAuth();
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -44,18 +50,43 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
   useEffect(() => {
     if (open) {
       setLoadingWallets(true);
-      getWalletsApi(false)
-        .then((list) => {
-          const validWallets = (list || []).filter((w) => w.id !== sourceWalletId && !w.is_archived);
+      const loadWallets = async () => {
+        try {
+          let list: Wallet[] = [];
+          if (isOnline) {
+            list = await getWalletsApi(false);
+          } else {
+            const cached = await getCachedWallets('all', user?.id);
+            list = cached?.wallets || [];
+          }
+          const validWallets = (list || []).filter(
+            (w) =>
+              w.id !== sourceWalletId &&
+              !w.is_archived &&
+              (w.creator_id === user?.id || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+          );
           setWallets(validWallets);
           if (validWallets.length > 0) {
             setSelectedWalletId(validWallets[0].id);
           }
-        })
-        .catch(() => setError('Gagal memuat daftar wallet tujuan.'))
-        .finally(() => setLoadingWallets(false));
+        } catch {
+          // Fallback to cache
+          const cached = await getCachedWallets('all', user?.id);
+          const validWallets = (cached?.wallets || []).filter(
+            (w) => w.id !== sourceWalletId && !w.is_archived
+          );
+          setWallets(validWallets);
+          if (validWallets.length > 0) {
+            setSelectedWalletId(validWallets[0].id);
+          }
+        } finally {
+          setLoadingWallets(false);
+        }
+      };
+
+      loadWallets();
     }
-  }, [open, sourceWalletId]);
+  }, [open, sourceWalletId, isOnline, user?.id]);
 
   if (!targetEntry) return null;
 
@@ -76,14 +107,20 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      await moveEntryApi({
+      const res = await moveEntryAdapter({
         source_wallet_id: sourceWalletId,
         target_wallet_id: selectedWalletId,
-        entry_id: targetEntry.id,
+        targetEntry,
         notes: notes.trim(),
+        isOnline,
+        userId: user?.id,
       });
 
-      onSuccess();
+      if (res.is_offline) {
+        await refreshPendingCount();
+      }
+
+      onSuccess(res.is_offline);
       handleClose();
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
@@ -97,12 +134,18 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <form onSubmit={handleSubmit}>
         <DialogTitle sx={{ fontWeight: 700 }}>
-          Pindah Entri ke Wallet Lain
+          Pindah Entri ke Buku Lain
         </DialogTitle>
         <DialogContent dividers>
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
+            </Alert>
+          )}
+
+          {!isOnline && (
+            <Alert severity="info" icon={<CloudOffIcon />} sx={{ mb: 2 }}>
+              Mode offline: Koreksi saldo pada buku asal dan titipan baru pada buku tujuan akan disimpan di antrean lokal dan disinkronkan saat terhubung kembali.
             </Alert>
           )}
 
@@ -119,22 +162,27 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
               </Typography>
             )}
             <Typography variant="body2" color="primary" sx={{ fontWeight: 600 }}>
-              Nominal: {formatRupiah(targetEntry.amount)}
+              Nominal:{' '}
+              {formatRupiah(
+                targetEntry.effective_amount !== undefined
+                  ? targetEntry.effective_amount
+                  : targetEntry.amount
+              )}
             </Typography>
           </Box>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             <FormControl fullWidth disabled={loadingWallets || wallets.length === 0}>
-              <InputLabel id="target-wallet-label">Pilih Wallet Tujuan</InputLabel>
+              <InputLabel id="target-wallet-label">Pilih Buku Tujuan</InputLabel>
               <Select
                 labelId="target-wallet-label"
                 value={selectedWalletId}
-                label="Pilih Wallet Tujuan"
+                label="Pilih Buku Tujuan"
                 onChange={(e) => setSelectedWalletId(e.target.value)}
               >
                 {wallets.map((w) => (
                   <MenuItem key={w.id} value={w.id}>
-                    {w.name} {w.owner_username ? `(Owner: ${w.owner_username})` : '(Belum tertaut)'}
+                    {w.name} {w.owner_username ? `(Rekan: @${w.owner_username})` : '(Belum tertaut)'}
                   </MenuItem>
                 ))}
               </Select>
@@ -142,7 +190,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
 
             {wallets.length === 0 && !loadingWallets && (
               <Alert severity="warning">
-                Tidak ada wallet tujuan yang tersedia. Buat wallet baru terlebih dahulu.
+                Tidak ada buku tujuan aktif lain yang dikelola oleh Anda. Buat buku baru terlebih dahulu.
               </Alert>
             )}
 

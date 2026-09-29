@@ -15,6 +15,9 @@ import {
   MenuItem,
   Chip,
   Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ShareIcon from '@mui/icons-material/Share';
@@ -39,12 +42,16 @@ import { LinkWalletModal } from '../components/LinkWalletModal';
 import { UnlinkWalletModal } from '../components/UnlinkWalletModal';
 import { RekapTextModal } from '../components/RekapTextModal';
 
-import { updateWalletNameApi, archiveWalletApi, unarchiveWalletApi } from '../api/wallets';
+import { updateWalletNameApi, archiveWalletApi, unarchiveWalletApi, getWalletsApi } from '../api/wallets';
 import { getStatementApi, getExportCSVUrl } from '../api/statements';
 import {
   getPendingOfflineEntriesByWallet,
   setCachedStatement,
   getCachedStatement,
+  removePendingOfflineEntry,
+  moveFailedOfflineEntry,
+  retryFailedOfflineEntry,
+  getCachedWallets,
 } from '../offline/db';
 import { useAuth } from '../context/AuthContext';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
@@ -54,7 +61,7 @@ export const WalletDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isOnline } = useOnlineStatus();
+  const { isOnline, refreshPendingCount, triggerSync } = useOnlineStatus();
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [summary, setSummary] = useState<StatementSummary | null>(null);
@@ -77,6 +84,12 @@ export const WalletDetailPage: React.FC = () => {
   const [openRenameModal, setOpenRenameModal] = useState<boolean>(false);
   const [renameValue, setRenameValue] = useState<string>('');
 
+  // Move failed entry dialog
+  const [openMoveFailedModal, setOpenMoveFailedModal] = useState<boolean>(false);
+  const [selectedFailedEntry, setSelectedFailedEntry] = useState<Entry | null>(null);
+  const [availableTargetWallets, setAvailableTargetWallets] = useState<Wallet[]>([]);
+  const [selectedTargetWalletId, setSelectedTargetWalletId] = useState<string>('');
+
   // Actions menu
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -87,7 +100,7 @@ export const WalletDetailPage: React.FC = () => {
       setError(null);
 
       // 1. Fetch pending offline items from IndexedDB for this wallet
-      const pending = await getPendingOfflineEntriesByWallet(id);
+      const pending = await getPendingOfflineEntriesByWallet(id, user?.id);
       const pendingEntries: Entry[] = pending.map((p) => ({
         id: p.client_id,
         client_id: p.client_id,
@@ -131,10 +144,10 @@ export const WalletDetailPage: React.FC = () => {
         await setCachedStatement(id, {
           ...stmt,
           cached_at: new Date().toISOString(),
-        });
+        }, user?.id);
       } else {
         // Offline: retrieve from cache
-        const cached = await getCachedStatement(id);
+        const cached = await getCachedStatement(id, user?.id);
         if (cached?.data) {
           const cachedStmt = cached.data;
           setWallet(cachedStmt.wallet);
@@ -159,7 +172,7 @@ export const WalletDetailPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, page, isOnline]);
+  }, [id, page, isOnline, user?.id]);
 
   useEffect(() => {
     fetchWalletData();
@@ -191,6 +204,76 @@ export const WalletDetailPage: React.FC = () => {
     }
     if (!isOffline) {
       fetchWalletData();
+    }
+  };
+
+  const handleDiscardFailedEntry = async (entry: Entry) => {
+    const confirmDiscard = window.confirm(
+      `Apakah Anda yakin ingin membuang entri "${entry.item_name}" yang gagal tersinkronisasi ini?`
+    );
+    if (!confirmDiscard) return;
+
+    try {
+      await removePendingOfflineEntry(entry.client_id);
+      await refreshPendingCount();
+      fetchWalletData();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr.message || 'Gagal membuang entri offline.');
+    }
+  };
+
+  const handleRetryFailedEntry = async (entry: Entry) => {
+    try {
+      await retryFailedOfflineEntry(entry.client_id);
+      await refreshPendingCount();
+      if (isOnline) {
+        triggerSync();
+      }
+      fetchWalletData();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr.message || 'Gagal menyetel ulang entri.');
+    }
+  };
+
+  const handleOpenMoveFailedModal = async (entry: Entry) => {
+    setSelectedFailedEntry(entry);
+    try {
+      let list: Wallet[] = [];
+      if (isOnline) {
+        list = await getWalletsApi(false);
+      } else {
+        const cached = await getCachedWallets('all', user?.id);
+        list = cached?.wallets || [];
+      }
+      const valid = list.filter((w) => w.id !== id && !w.is_archived);
+      setAvailableTargetWallets(valid);
+      if (valid.length > 0) {
+        setSelectedTargetWalletId(valid[0].id);
+      }
+      setOpenMoveFailedModal(true);
+    } catch {
+      setError('Gagal memuat daftar buku tujuan.');
+    }
+  };
+
+  const handleConfirmMoveFailed = async () => {
+    if (!selectedFailedEntry || !selectedTargetWalletId) return;
+
+    try {
+      // Moves the failed entry to the selected target wallet while preserving client_id and timestamps
+      await moveFailedOfflineEntry(selectedFailedEntry.client_id, selectedTargetWalletId);
+      await refreshPendingCount();
+      setOpenMoveFailedModal(false);
+      setSelectedFailedEntry(null);
+      if (isOnline) {
+        triggerSync();
+      }
+      fetchWalletData();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr.message || 'Gagal memindahkan entri offline.');
     }
   };
 
@@ -421,6 +504,9 @@ export const WalletDetailPage: React.FC = () => {
           setSelectedEntryForMove(e);
           setOpenMoveModal(true);
         }}
+        onDiscardFailedEntry={handleDiscardFailedEntry}
+        onMoveFailedEntry={handleOpenMoveFailedModal}
+        onRetryFailedEntry={handleRetryFailedEntry}
         isArchivedWallet={wallet.is_archived}
       />
 
@@ -494,6 +580,51 @@ export const WalletDetailPage: React.FC = () => {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Move Failed Entry Dialog */}
+      <Dialog open={openMoveFailedModal} onClose={() => setOpenMoveFailedModal(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Pindahkan Entri Gagal ke Buku Lain</DialogTitle>
+        <DialogContent dividers>
+          {selectedFailedEntry && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {selectedFailedEntry.item_name} ({formatRupiah(selectedFailedEntry.amount)})
+              </Typography>
+              <Typography variant="caption" color="error" display="block">
+                Alasan gagal sebelumnya: {selectedFailedEntry.offline_error || 'Ditolak server'}
+              </Typography>
+            </Box>
+          )}
+
+          <FormControl fullWidth sx={{ mt: 1 }}>
+            <InputLabel id="failed-move-target-label">Pilih Buku Tujuan</InputLabel>
+            <Select
+              labelId="failed-move-target-label"
+              value={selectedTargetWalletId}
+              label="Pilih Buku Tujuan"
+              onChange={(e) => setSelectedTargetWalletId(e.target.value)}
+            >
+              {availableTargetWallets.map((w) => (
+                <MenuItem key={w.id} value={w.id}>
+                  {w.name} {w.owner_username ? `(@${w.owner_username})` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenMoveFailedModal(false)} color="inherit">
+            Batal
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!selectedTargetWalletId || availableTargetWallets.length === 0}
+            onClick={handleConfirmMoveFailed}
+          >
+            Pindahkan & Antrekan Ulang
+          </Button>
+        </DialogActions>
       </Dialog>
     </Layout>
   );

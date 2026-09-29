@@ -4,7 +4,11 @@ import {
   queueOfflineEntry,
   getPendingOfflineCount,
   clearAllOfflineEntries,
+  saveShoppingDraft,
+  clearShoppingDraft,
+  hasShoppingDraft,
   resetDBInstance,
+  setCurrentUserId,
 } from '../offline/db';
 import * as entriesApi from '../api/entries';
 import * as authApi from '../api/auth';
@@ -14,6 +18,7 @@ describe('Auth Renewal & Offline Sync Queue Replay', () => {
   beforeEach(async () => {
     resetDBInstance();
     await clearAllOfflineEntries();
+    await clearShoppingDraft();
     vi.restoreAllMocks();
   });
 
@@ -104,5 +109,47 @@ describe('Auth Renewal & Offline Sync Queue Replay', () => {
     const res = await authApi.renewAuthTokenApi();
     expect(renewSpy).toHaveBeenCalled();
     expect(res.user?.username).toBe('test_user');
+  });
+
+  it('detects pending offline entries and active shopping drafts for logout warning', async () => {
+    setCurrentUserId('user-warn-1');
+
+    expect(await getPendingOfflineCount('user-warn-1')).toBe(0);
+    expect(await hasShoppingDraft('user-warn-1')).toBe(false);
+
+    // Add shopping draft
+    await saveShoppingDraft({
+      rows: [
+        {
+          rowId: 'row-w-1',
+          wallet_id: 'w-1',
+          item_name: 'Kopi Susu',
+          amount_str: '15000',
+          amount: 15000,
+          note: '',
+        },
+      ],
+      occurred_at: new Date().toISOString(),
+      saved_at: new Date().toISOString(),
+    }, 'user-warn-1');
+
+    expect(await hasShoppingDraft('user-warn-1')).toBe(true);
+
+    // Add pending offline entry
+    await queueOfflineEntry({
+      client_id: 'client-warn-1',
+      user_id: 'user-warn-1',
+      wallet_id: 'w-1',
+      type: 'titipan',
+      amount: 20000,
+      item_name: 'Nasi Kuning',
+      note: '',
+      occurred_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      retry_count: 0,
+      status: 'pending',
+    }, 'user-warn-1');
+
+    expect(await getPendingOfflineCount('user-warn-1')).toBe(1);
   });
 });

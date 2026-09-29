@@ -1,14 +1,14 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User } from '../types';
 import { getMeApi, loginApi, logoutApi, registerApi, renewAuthTokenApi } from '../api/auth';
-import { getPendingOfflineCount } from '../offline/db';
+import { getPendingOfflineCount, hasShoppingDraft, setCurrentUserId } from '../offline/db';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: () => Promise<boolean>;
   refreshUser: () => Promise<void>;
   renewSession: () => Promise<void>;
 }
@@ -20,12 +20,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const lastRenewRef = useRef<number>(0);
 
+  // Synchronize active user ID to offline DB
+  useEffect(() => {
+    setCurrentUserId(user?.id || null);
+  }, [user]);
+
   const refreshUser = useCallback(async () => {
     try {
       const res = await getMeApi();
       setUser(res.user);
+      setCurrentUserId(res.user?.id || null);
     } catch {
       setUser(null);
+      setCurrentUserId(null);
     } finally {
       setIsLoading(false);
     }
@@ -43,6 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await renewAuthTokenApi();
       if (res?.user) {
         setUser(res.user);
+        setCurrentUserId(res.user.id);
       }
     } catch (err) {
       // If renew fails due to token version revocation, refresh current user status
@@ -82,31 +90,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (username: string, password: string) => {
     const res = await loginApi(username, password);
     setUser(res.user);
+    setCurrentUserId(res.user.id);
     lastRenewRef.current = Date.now();
   };
 
   const register = async (username: string, password: string) => {
     const res = await registerApi(username, password);
     setUser(res.user);
+    setCurrentUserId(res.user.id);
     lastRenewRef.current = Date.now();
   };
 
-  const logout = async () => {
+  const logout = async (): Promise<boolean> => {
     try {
-      const pendingCount = await getPendingOfflineCount();
-      if (pendingCount > 0) {
+      const pendingCount = await getPendingOfflineCount(user?.id);
+      const draftExists = await hasShoppingDraft(user?.id);
+
+      if (pendingCount > 0 || draftExists) {
+        const details: string[] = [];
+        if (pendingCount > 0) {
+          details.push(`${pendingCount} transaksi dalam antrean offline`);
+        }
+        if (draftExists) {
+          details.push('draft sesi belanja yang belum disimpan');
+        }
+
         const proceed = window.confirm(
-          `Peringatan: Terdapat ${pendingCount} antrean transaksi offline yang belum tersinkronisasi. Transaksi tersebut akan tetap tersimpan di perangkat sampai Anda login kembali dengan akun ini. Apakah Anda yakin ingin keluar?`
+          `Peringatan: Terdapat ${details.join(' dan ')} yang belum tersinkronisasi. Data tersebut akan tetap tersimpan aman di perangkat ini sampai Anda login kembali dengan akun yang sama. Apakah Anda yakin ingin keluar?`
         );
         if (!proceed) {
-          return;
+          return false;
         }
       }
+
       await logoutApi();
+      return true;
     } catch (err) {
       console.error('Logout error:', err);
+      return true;
     } finally {
       setUser(null);
+      setCurrentUserId(null);
     }
   };
 
