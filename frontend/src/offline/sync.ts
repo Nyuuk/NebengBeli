@@ -1,30 +1,90 @@
-import { createEntryApi } from '../api/entries';
-import { getPendingOfflineEntries, removePendingOfflineEntry, queueOfflineEntry } from './db';
+import { createEntryApi, batchCreateEntriesApi } from '../api/entries';
+import {
+  getPendingOfflineEntries,
+  removePendingOfflineEntry,
+  markOfflineEntryFailed,
+  queueOfflineEntry,
+  getCurrentUserId,
+} from './db';
+import { BatchEntryItem } from '../types';
 
 let isSyncRunning = false;
 
-export async function syncOfflineQueue(onProgress?: (synced: number, total: number) => void): Promise<{ synced: number; failed: number }> {
+export async function syncOfflineQueue(
+  userId?: string,
+  onProgress?: (synced: number, total: number) => void
+): Promise<{ synced: number; failed: number }> {
   if (isSyncRunning) {
     return { synced: 0, failed: 0 };
   }
 
   isSyncRunning = true;
   try {
-    const pending = await getPendingOfflineEntries();
-    if (!pending || pending.length === 0) {
+    const targetUser = userId !== undefined ? userId : getCurrentUserId();
+    const rawPending = await getPendingOfflineEntries(targetUser || undefined);
+    if (!rawPending || rawPending.length === 0) {
       return { synced: 0, failed: 0 };
     }
+
+    // Sort strictly chronologically by occurred_at / created_at to guarantee correct ledger sequence
+    const pending = [...rawPending].sort((a, b) => {
+      const timeA = new Date(a.occurred_at || a.created_at).getTime();
+      const timeB = new Date(b.occurred_at || b.created_at).getTime();
+      return timeA - timeB;
+    });
 
     let synced = 0;
     let failed = 0;
 
-    for (let i = 0; i < pending.length; i++) {
-      const item = pending[i];
+    // Try batching titipan entries if there are multiple standard entries without dependencies
+    const standardTitipan = pending.filter(
+      (p) => p.type === 'titipan' && !p.corrects_entry_id
+    );
+
+    if (standardTitipan.length > 1) {
+      try {
+        const batchItems: BatchEntryItem[] = standardTitipan.map((item) => ({
+          client_id: item.client_id,
+          wallet_id: item.wallet_id,
+          type: item.type,
+          amount: item.amount,
+          item_name: item.item_name,
+          note: item.note,
+          occurred_at: item.occurred_at,
+        }));
+
+        await batchCreateEntriesApi(batchItems);
+
+        for (const item of standardTitipan) {
+          await removePendingOfflineEntry(item.client_id);
+          synced++;
+          if (onProgress) {
+            onProgress(synced, pending.length);
+          }
+        }
+      } catch (batchErr: unknown) {
+        // If batch fails, fallback to sequential single entry processing
+        console.warn('Batch sync failed, falling back to sequential processing:', batchErr);
+      }
+    }
+
+    // Refresh remaining pending after batch attempt
+    const remainingPending = await getPendingOfflineEntries(targetUser || undefined);
+    const sortedRemaining = [...remainingPending].sort((a, b) => {
+      const timeA = new Date(a.occurred_at || a.created_at).getTime();
+      const timeB = new Date(b.occurred_at || b.created_at).getTime();
+      return timeA - timeB;
+    });
+
+    for (let i = 0; i < sortedRemaining.length; i++) {
+      const item = sortedRemaining[i];
       try {
         await createEntryApi(item.wallet_id, {
           client_id: item.client_id,
           type: item.type,
-          amount: item.amount,
+          amount: item.type === 'koreksi' ? (item.target_amount ?? item.final_nominal ?? item.amount) : item.amount,
+          target_amount: item.target_amount,
+          final_nominal: item.final_nominal,
           item_name: item.item_name,
           note: item.note,
           corrects_entry_id: item.corrects_entry_id,
@@ -39,21 +99,29 @@ export async function syncOfflineQueue(onProgress?: (synced: number, total: numb
           onProgress(synced, pending.length);
         }
       } catch (err: unknown) {
-        const apiErr = err as { status?: number };
-        // If error is duplicate (409) or client error that cannot be resolved (400, 403, 404, 422), discard from queue
-        if (apiErr.status && [400, 403, 404, 409, 422].includes(apiErr.status)) {
-          console.warn(`Offline item resolved or rejected by server (${apiErr.status}), removing from queue:`, item.client_id);
+        const apiErr = err as { status?: number; message?: string };
+        // If error is duplicate (409) or successful duplicate return (200), remove
+        if (apiErr.status === 409) {
           await removePendingOfflineEntry(item.client_id);
+          synced++;
+        } else if (apiErr.status && [400, 403, 404, 422].includes(apiErr.status)) {
+          // Permanent rejection by server: mark as failed in IDB with reason so user can inspect / discard / move
+          const reason = apiErr.message || `Ditolak server (HTTP ${apiErr.status})`;
+          console.warn(`Offline item rejected by server (${apiErr.status}):`, item.client_id, reason);
+          await markOfflineEntryFailed(item.client_id, reason);
           failed++;
         } else {
           // Network error or 5xx persisting, increment retry count and keep in queue
           item.retry_count = (item.retry_count || 0) + 1;
-          await queueOfflineEntry(item);
+          await queueOfflineEntry(item, item.user_id);
           failed++;
           break; // Stop loop if network is unreachable
         }
       }
     }
+
+    // Dispatch global event so views know sync finished
+    window.dispatchEvent(new CustomEvent('nebengbeli:synced', { detail: { synced, failed } }));
 
     return { synced, failed };
   } finally {

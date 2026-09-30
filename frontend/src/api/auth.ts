@@ -4,6 +4,7 @@ import { User } from '../types';
 export interface AuthResponse {
   user: User;
   token?: string;
+  expires_at?: string;
 }
 
 export async function loginApi(username: string, password: string): Promise<AuthResponse> {
@@ -28,9 +29,28 @@ export async function getMeApi(): Promise<{ user: User }> {
   return request<{ user: User }>('/api/auth/me');
 }
 
+export async function changePasswordApi(currentPassword: string, newPassword: string): Promise<{ message: string }> {
+  return request<{ message: string }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+}
+
 export async function resetPasswordApi(newPassword: string): Promise<{ message: string }> {
   return request<{ message: string }>('/api/auth/reset-password', {
     method: 'POST',
     body: JSON.stringify({ new_password: newPassword }),
   });
+}
+
+export async function renewAuthTokenApi(): Promise<{ message?: string; user?: User; token?: string; expires_at?: string }> {
+  try {
+    return await request('/api/auth/renew', { method: 'POST' });
+  } catch (err) {
+    // Fallback to /auth/renew if mapped at root
+    return await request('/auth/renew', { method: 'POST' });
+  }
 }

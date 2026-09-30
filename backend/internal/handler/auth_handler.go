@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nyuuk/nebengbeli/internal/config"
@@ -26,6 +28,11 @@ type AuthRequest struct {
 	Password string `json:"password" binding:"required,min=6"`
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required,min=1"`
+	NewPassword     string `json:"new_password" binding:"required,min=6"`
+}
+
 type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
@@ -37,7 +44,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, token, err := h.authSvc.Register(c.Request.Context(), req.Username, req.Password)
+	user, token, expiresAt, err := h.authSvc.Register(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -45,8 +52,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusCreated, gin.H{
-		"user":  user,
-		"token": token,
+		"user":       user,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
 
@@ -57,7 +65,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, token, err := h.authSvc.Login(c.Request.Context(), req.Username, req.Password)
+	user, token, expiresAt, err := h.authSvc.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -65,8 +73,31 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{
-		"user":  user,
-		"token": token,
+		"user":       user,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
+	})
+}
+
+func (h *AuthHandler) Renew(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	renewedUser, token, expiresAt, err := h.authSvc.RenewToken(c.Request.Context(), user.ID, user.TokenVersion)
+	if err != nil {
+		h.clearAuthCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.setAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{
+		"user":       renewedUser,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
 
@@ -90,6 +121,32 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"user": user.ToResponse(),
 	})
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.authSvc.ChangePassword(c.Request.Context(), user.ID, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "kata sandi saat ini salah"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.clearAuthCookie(c)
+	c.JSON(http.StatusOK, gin.H{"message": "kata sandi berhasil diubah, silakan login kembali dengan kata sandi baru"})
 }
 
 func (h *AuthHandler) ResetPassword(c *gin.Context) {

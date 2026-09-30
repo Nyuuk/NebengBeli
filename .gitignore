@@ -17,6 +17,11 @@ yarn-error.log*
 # Environment & Local Secrets
 .env
 .env.local
+.env.e2e
+certs/
+*.pem
+*.crt
+*.key
 
 # OS and Editors
 .DS_Store
@@ -27,3 +32,8 @@ yarn-error.log*
 
 # Docker
 postgres_data/
+
+# Test artifacts & logs
+test-results/local-*.log
+test-results/smoke-*.log
+
