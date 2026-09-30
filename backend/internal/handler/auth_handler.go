@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -25,6 +26,11 @@ func NewAuthHandler(authSvc service.AuthService, cfg *config.Config) *AuthHandle
 type AuthRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=64"`
 	Password string `json:"password" binding:"required,min=6"`
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required,min=1"`
+	NewPassword     string `json:"new_password" binding:"required,min=6"`
 }
 
 type ResetPasswordRequest struct {
@@ -115,6 +121,32 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"user": user.ToResponse(),
 	})
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.authSvc.ChangePassword(c.Request.Context(), user.ID, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "kata sandi saat ini salah"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.clearAuthCookie(c)
+	c.JSON(http.StatusOK, gin.H{"message": "kata sandi berhasil diubah, silakan login kembali dengan kata sandi baru"})
 }
 
 func (h *AuthHandler) ResetPassword(c *gin.Context) {

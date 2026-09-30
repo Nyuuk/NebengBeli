@@ -13,6 +13,7 @@ import {
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LinkIcon from '@mui/icons-material/Link';
+import LockResetIcon from '@mui/icons-material/LockReset';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 export const Navbar: React.FC = () => {
@@ -105,6 +106,9 @@ export const Navbar: React.FC = () => {
               </MenuItem>
               <MenuItem onClick={() => { handleMenuClose(); navigate('/links'); }}>
                 <LinkIcon fontSize="small" sx={{ mr: 1 }} /> Kelola Undangan
+              </MenuItem>
+              <MenuItem onClick={() => { handleMenuClose(); navigate('/change-password'); }}>
+                <LockResetIcon fontSize="small" sx={{ mr: 1 }} /> Ganti Kata Sandi
               </MenuItem>
               {user.role === 'admin' && (
                 <MenuItem onClick={() => { handleMenuClose(); navigate('/admin'); }}>

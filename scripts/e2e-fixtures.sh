@@ -31,10 +31,11 @@ case "${ACTION}" in
 
     seed)
         SCENARIO="${2:-standard}"
+        PASSWORD="${3:-TestPassword123!}"
         echo "[fixtures] Seeding test fixtures (scenario: ${SCENARIO})..."
         RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/dev/fixtures/seed \
             -H "Content-Type: application/json" \
-            -d "{\"scenario\":\"${SCENARIO}\"}")
+            -d "{\"scenario\":\"${SCENARIO}\",\"password\":\"${PASSWORD}\"}")
         
         echo "[fixtures] Seed response: ${RESPONSE}"
         ;;
@@ -66,11 +67,11 @@ case "${ACTION}" in
         echo "Usage: $0 <command> [arguments]"
         echo ""
         echo "Commands:"
-        echo "  create-admin [username] [password]  Create or update an admin user"
-        echo "  seed [standard|empty|linked]        Seed predictable fixture accounts & wallets"
-        echo "  reset                               Wipe fixture data safely in dev mode"
-        echo "  status                              Check dev endpoint and platform statistics"
-        echo "  list-users                          List users and token versions via CLI"
+        echo "  create-admin [username] [password]                 Create or update an admin user"
+        echo "  seed [standard|empty|linked|disposable] [password] Seed deterministic fixture accounts & wallets"
+        echo "  reset                                              Wipe fixture data safely in dev mode"
+        echo "  status                                             Check dev endpoint and platform statistics"
+        echo "  list-users                                         List users and token versions via CLI"
         exit 1
         ;;
 esac

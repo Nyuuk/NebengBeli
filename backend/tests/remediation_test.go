@@ -19,6 +19,7 @@ import (
 	"github.com/nyuuk/nebengbeli/internal/auth"
 	"github.com/nyuuk/nebengbeli/internal/config"
 	"github.com/nyuuk/nebengbeli/internal/handler"
+	"github.com/nyuuk/nebengbeli/internal/middleware"
 	"github.com/nyuuk/nebengbeli/internal/model"
 	"github.com/nyuuk/nebengbeli/internal/repository"
 	"github.com/nyuuk/nebengbeli/internal/service"
@@ -422,9 +423,12 @@ func (m *mockWalletRepo) Count(ctx context.Context) (int64, int64, error) {
 	return int64(len(m.wallets)), 0, nil
 }
 
-type mockAuditRepo struct{}
+type mockAuditRepo struct {
+	logs []*model.AuditLog
+}
 
 func (m *mockAuditRepo) Create(ctx context.Context, log *model.AuditLog) error {
+	m.logs = append(m.logs, log)
 	return nil
 }
 
@@ -433,7 +437,7 @@ func (m *mockAuditRepo) List(ctx context.Context, filter repository.AuditLogFilt
 }
 
 func (m *mockAuditRepo) Count(ctx context.Context) (int64, error) {
-	return 0, nil
+	return int64(len(m.logs)), nil
 }
 
 type mockUserRepo struct {
@@ -1440,4 +1444,172 @@ func TestF10_AuthRenewAndTokenRevocation(t *testing.T) {
 	if err != service.ErrTokenRevoked {
 		t.Errorf("expected ErrTokenRevoked after admin reset password, got: %v", err)
 	}
+}
+
+func TestF10_SelfServiceAuthenticatedPasswordChange(t *testing.T) {
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager("test-secret-key-32-chars-minimum-length!", 72*time.Hour)
+
+	authSvc := service.NewAuthService(userRepo, auditRepo, jwtMgr)
+
+	// 1. Register user
+	userResp, token, _, err := authSvc.Register(context.Background(), "change_pw_user", "OriginalSecret123!")
+	if err != nil {
+		t.Fatalf("expected register to succeed, got: %v", err)
+	}
+	if token == "" {
+		t.Fatal("expected non-empty token")
+	}
+
+	// 2. Change password with wrong current password -> must fail with ErrInvalidCredentials
+	err = authSvc.ChangePassword(context.Background(), userResp.ID, "WrongPassword!", "NewValidSecret456!")
+	if !errors.Is(err, service.ErrInvalidCredentials) {
+		t.Errorf("expected ErrInvalidCredentials for wrong current password, got: %v", err)
+	}
+
+	// 3. Change password with too short new password (< 6 chars) -> must fail
+	err = authSvc.ChangePassword(context.Background(), userResp.ID, "OriginalSecret123!", "123")
+	if err == nil {
+		t.Errorf("expected error for short new password, got nil")
+	}
+
+	// 4. Change password with empty current password -> must fail
+	err = authSvc.ChangePassword(context.Background(), userResp.ID, "", "NewValidSecret456!")
+	if err == nil {
+		t.Errorf("expected error for empty current password, got nil")
+	}
+
+	// 5. Successful self-service password change
+	err = authSvc.ChangePassword(context.Background(), userResp.ID, "OriginalSecret123!", "NewValidSecret456!")
+	if err != nil {
+		t.Fatalf("expected ChangePassword to succeed, got: %v", err)
+	}
+
+	// 6. Old token version (1) is revoked
+	_, err = authSvc.GetCurrentUser(context.Background(), userResp.ID, 1)
+	if !errors.Is(err, service.ErrTokenRevoked) {
+		t.Errorf("expected ErrTokenRevoked for old token version, got: %v", err)
+	}
+
+	// 7. Login with old password fails
+	_, _, _, err = authSvc.Login(context.Background(), "change_pw_user", "OriginalSecret123!")
+	if !errors.Is(err, service.ErrInvalidCredentials) {
+		t.Errorf("expected ErrInvalidCredentials for old password login, got: %v", err)
+	}
+
+	// 8. Login with new password succeeds
+	newResp, newToken, _, err := authSvc.Login(context.Background(), "change_pw_user", "NewValidSecret456!")
+	if err != nil {
+		t.Fatalf("expected login with new password to succeed, got: %v", err)
+	}
+	if newResp.Username != "change_pw_user" {
+		t.Errorf("expected username change_pw_user, got %s", newResp.Username)
+	}
+	if newToken == "" {
+		t.Error("expected valid token from new login")
+	}
+
+	// 9. Current user with new token version 2 succeeds
+	currentUser, err := authSvc.GetCurrentUser(context.Background(), userResp.ID, 2)
+	if err != nil {
+		t.Fatalf("expected GetCurrentUser with token version 2 to succeed, got: %v", err)
+	}
+	if currentUser.TokenVersion != 2 {
+		t.Errorf("expected token_version 2, got %d", currentUser.TokenVersion)
+	}
+	if currentUser.Username != "change_pw_user" {
+		t.Errorf("expected username change_pw_user, got %s", currentUser.Username)
+	}
+
+	// 10. Verify audit log entry
+	foundAudit := false
+	for _, l := range auditRepo.logs {
+		if l.Action == string(model.AuditActionUserPasswordChange) && *l.ActorID == userResp.ID {
+			foundAudit = true
+			break
+		}
+	}
+	if !foundAudit {
+		t.Errorf("expected audit log entry with action %s", model.AuditActionUserPasswordChange)
+	}
+}
+
+func TestF10_ChangePasswordAPIHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	userRepo := &mockUserRepo{users: make(map[string]*model.User), usersByID: make(map[uuid.UUID]*model.User)}
+	auditRepo := &mockAuditRepo{}
+	jwtMgr := auth.NewJWTManager("test-secret-key-32-chars-minimum-length!", 72*time.Hour)
+	cfg := &config.Config{
+		JWTSecret:    "test-secret-key-32-chars-minimum-length!",
+		JWTExpiry:    72 * time.Hour,
+		CookieSecure: false,
+		CookieDomain: "",
+	}
+
+	authSvc := service.NewAuthService(userRepo, auditRepo, jwtMgr)
+	authHandler := handler.NewAuthHandler(authSvc, cfg)
+
+	userResp, token, _, err := authSvc.Register(context.Background(), "api_pw_user", "OldSecret123!")
+	if err != nil {
+		t.Fatalf("setup user registration failed: %v", err)
+	}
+
+	r := gin.New()
+	authRequired := r.Group("/api")
+	authRequired.Use(middleware.AuthMiddleware(jwtMgr, authSvc))
+	authRequired.POST("/auth/change-password", authHandler.ChangePassword)
+
+	// Case 1: Unauthenticated request -> 401
+	w1 := httptest.NewRecorder()
+	body1, _ := json.Marshal(map[string]string{
+		"current_password": "OldSecret123!",
+		"new_password":     "BrandNewPass123!",
+	})
+	req1, _ := http.NewRequest("POST", "/api/auth/change-password", bytes.NewReader(body1))
+	req1.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for unauthenticated request, got %d", w1.Code)
+	}
+
+	// Case 2: Wrong current password -> 400
+	w2 := httptest.NewRecorder()
+	body2, _ := json.Marshal(map[string]string{
+		"current_password": "WrongPassword!",
+		"new_password":     "BrandNewPass123!",
+	})
+	req2, _ := http.NewRequest("POST", "/api/auth/change-password", bytes.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for wrong current password, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Case 3: Valid change password -> 200
+	w3 := httptest.NewRecorder()
+	body3, _ := json.Marshal(map[string]string{
+		"current_password": "OldSecret123!",
+		"new_password":     "BrandNewPass123!",
+	})
+	req3, _ := http.NewRequest("POST", "/api/auth/change-password", bytes.NewReader(body3))
+	req3.Header.Set("Content-Type", "application/json")
+	req3.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid change password, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	// Verify old token is now rejected by middleware (session revoked)
+	w4 := httptest.NewRecorder()
+	req4, _ := http.NewRequest("POST", "/api/auth/change-password", bytes.NewReader(body3))
+	req4.Header.Set("Content-Type", "application/json")
+	req4.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with old token after password change, got %d", w4.Code)
+	}
+
+	_ = userResp
 }

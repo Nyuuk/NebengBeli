@@ -13,6 +13,7 @@ const (
 	AuditActionUserRegister       AuditAction = "user.register"
 	AuditActionUserLogin          AuditAction = "user.login"
 	AuditActionUserLogout         AuditAction = "user.logout"
+	AuditActionUserPasswordChange AuditAction = "user.password_change"
 	AuditActionUserPasswordReset  AuditAction = "user.password_reset"
 	AuditActionWalletCreate       AuditAction = "wallet.create"
 	AuditActionWalletUpdate       AuditAction = "wallet.update"

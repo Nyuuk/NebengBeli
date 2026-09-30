@@ -1,3 +1,5 @@
+import { isAppOnline, isSimulatedOffline } from '../offline/networkMode';
+
 const API_BASE_URL = ''; // Relative path leverages Vite dev proxy / Nginx reverse proxy
 
 export class ApiError extends Error {
@@ -16,6 +18,13 @@ export async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  if (!isAppOnline()) {
+    throw new ApiError(
+      isSimulatedOffline() ? 'You are currently offline (E2E simulation mode)' : 'You are currently offline',
+      0
+    );
+  }
+
   const url = `${API_BASE_URL}${path}`;
   const headers = new Headers(options.headers || {});
 
@@ -61,7 +70,7 @@ export async function request<T>(
     }
     // Network error / offline
     throw new ApiError(
-      navigator.onLine ? 'Network connection error' : 'You are currently offline',
+      isAppOnline() ? 'Network connection error' : 'You are currently offline',
       0,
       err
     );

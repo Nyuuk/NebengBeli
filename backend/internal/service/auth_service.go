@@ -25,6 +25,7 @@ type AuthService interface {
 	RenewToken(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.UserResponse, string, time.Time, error)
 	Logout(ctx context.Context, userID uuid.UUID) error
 	GetCurrentUser(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.User, error)
+	ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error
 	ResetPassword(ctx context.Context, userID uuid.UUID, newPassword string) error
 	AdminResetPassword(ctx context.Context, adminID uuid.UUID, targetUsername, newPassword string) error
 	SeedAdminUser(ctx context.Context, username, password string) error
@@ -179,6 +180,44 @@ func (s *authService) GetCurrentUser(ctx context.Context, userID uuid.UUID, toke
 	}
 
 	return user, nil
+}
+
+func (s *authService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+	if len(newPassword) < 6 {
+		return errors.New("new password must be at least 6 characters")
+	}
+	if currentPassword == "" {
+		return errors.New("current password is required")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return ErrUnauthorized
+	}
+
+	if !auth.CheckPassword(currentPassword, user.PasswordHash) {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash new password: %w", err)
+	}
+
+	if err := s.userRepo.UpdatePassword(ctx, userID, hash); err != nil {
+		return err
+	}
+
+	entityID := userID.String()
+	_ = s.auditRepo.Create(ctx, &model.AuditLog{
+		ActorID:    &userID,
+		Action:     string(model.AuditActionUserPasswordChange),
+		TargetType: "user",
+		TargetID:   &entityID,
+		Metadata:   []byte(`{"changed_by":"self"}`),
+	})
+
+	return nil
 }
 
 func (s *authService) ResetPassword(ctx context.Context, userID uuid.UUID, newPassword string) error {

@@ -29,6 +29,16 @@ export async function getMeApi(): Promise<{ user: User }> {
   return request<{ user: User }>('/api/auth/me');
 }
 
+export async function changePasswordApi(currentPassword: string, newPassword: string): Promise<{ message: string }> {
+  return request<{ message: string }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+}
+
 export async function resetPasswordApi(newPassword: string): Promise<{ message: string }> {
   return request<{ message: string }>('/api/auth/reset-password', {
     method: 'POST',
