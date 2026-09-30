@@ -777,8 +777,8 @@ func TestNginxConfigurationHasSecurityAndPWAHeaders(t *testing.T) {
 	}
 
 	nginxStr := string(content)
-	if !strings.Contains(nginxStr, "listen 80;") {
-		t.Errorf("nginx.conf missing 'listen 80;'")
+	if !strings.Contains(nginxStr, "listen 8080;") {
+		t.Errorf("nginx.conf missing 'listen 8080;'")
 	}
 	if !strings.Contains(nginxStr, "Service-Worker-Allowed") {
 		t.Errorf("nginx.conf missing Service-Worker-Allowed header")
@@ -791,6 +791,39 @@ func TestNginxConfigurationHasSecurityAndPWAHeaders(t *testing.T) {
 	}
 	if !strings.Contains(nginxStr, "X-Frame-Options") {
 		t.Errorf("nginx.conf missing X-Frame-Options security header")
+	}
+	if !strings.Contains(nginxStr, "pid /tmp/nginx.pid;") {
+		t.Errorf("nginx.conf missing 'pid /tmp/nginx.pid;'")
+	}
+	if !strings.Contains(nginxStr, "client_body_temp_path /tmp/client_temp;") {
+		t.Errorf("nginx.conf missing client_body_temp_path in /tmp")
+	}
+}
+
+func TestFrontendDockerfileUnprivilegedNonRootSafety(t *testing.T) {
+	dockerfilePaths := []string{
+		filepath.Join("..", "..", "Dockerfile.frontend"),
+		filepath.Join("Dockerfile.frontend"),
+	}
+
+	var content []byte
+	var err error
+	for _, p := range dockerfilePaths {
+		content, err = os.ReadFile(p)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("failed to read Dockerfile.frontend: %v", err)
+	}
+
+	dfStr := string(content)
+	if !strings.Contains(dfStr, "USER nginx") {
+		t.Errorf("Dockerfile.frontend missing 'USER nginx' unprivileged user directive")
+	}
+	if !strings.Contains(dfStr, "EXPOSE 8080 8443") {
+		t.Errorf("Dockerfile.frontend missing unprivileged port 'EXPOSE 8080 8443'")
 	}
 }
 

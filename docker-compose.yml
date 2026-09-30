@@ -58,8 +58,8 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-8088}:80"
-      - "${FRONTEND_HTTPS_PORT:-8443}:443"
+      - "${FRONTEND_PORT:-8088}:8080"
+      - "${FRONTEND_HTTPS_PORT:-8443}:8443"
 
 volumes:
   postgres_data:

@@ -1,5 +1,5 @@
 services:
   frontend:
     ports: !override
-      - "8088:80"
-      - "8443:443"
+      - "8088:8080"
+      - "8443:8443"
