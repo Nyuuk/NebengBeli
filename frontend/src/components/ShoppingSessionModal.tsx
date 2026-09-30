@@ -354,6 +354,10 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                             {...params}
                             placeholder="Pilih buku..."
                             required
+                            inputProps={{
+                              ...params.inputProps,
+                              'aria-label': `Buku baris ${idx + 1}`,
+                            }}
                           />
                         )}
                       />
@@ -390,6 +394,10 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                             {...params}
                             placeholder="Contoh: Kopi Susu"
                             required
+                            inputProps={{
+                              ...params.inputProps,
+                              'aria-label': `Barang baris ${idx + 1}`,
+                            }}
                           />
                         )}
                       />
@@ -402,6 +410,9 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                         placeholder="0"
                         value={row.amount_str}
                         onChange={(e) => handleRowChange(idx, 'amount_str', e.target.value)}
+                        inputProps={{
+                          'aria-label': `Harga baris ${idx + 1}`,
+                        }}
                         InputProps={{
                           startAdornment: <InputAdornment position="start">Rp</InputAdornment>,
                         }}
@@ -415,6 +426,9 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                         placeholder="Opsional"
                         value={row.note}
                         onChange={(e) => handleRowChange(idx, 'note', e.target.value)}
+                        inputProps={{
+                          'aria-label': `Catatan baris ${idx + 1}`,
+                        }}
                       />
                     </TableCell>
 
@@ -427,6 +441,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                             color="error"
                             disabled={rows.length === 1}
                             onClick={() => handleDeleteRow(idx)}
+                            aria-label={`Hapus baris ${idx + 1}`}
                           >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
