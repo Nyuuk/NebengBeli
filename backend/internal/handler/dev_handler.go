@@ -53,10 +53,12 @@ const (
 	FixtureCreatorUsername = "test_creator"
 	FixtureOwnerUsername   = "test_owner"
 	FixtureAdminUsername   = "test_admin"
+	FixtureDefaultPassword = "TestPassword123!"
 )
 
 type DevSeedRequest struct {
-	Scenario string `json:"scenario"` // "empty", "standard", "linked"
+	Scenario string `json:"scenario"` // "empty", "standard", "linked", "wallet_with_entries", "disposable"
+	Password string `json:"password"` // Optional deterministic password for fixture accounts
 }
 
 func (h *DevHandler) isDevAllowed() bool {
@@ -64,7 +66,10 @@ func (h *DevHandler) isDevAllowed() bool {
 		return false
 	}
 	env := h.cfg.Environment
-	return env == "development" || env == "local" || env == "dev"
+	if env == "production" {
+		return false
+	}
+	return env == "development" || env == "local" || env == "dev" || env == "test"
 }
 
 // Status returns dev handler status
@@ -146,17 +151,28 @@ func (h *DevHandler) SeedFixtures(c *gin.Context) {
 		scenario = "standard"
 	}
 
+	pwd := req.Password
+	if pwd == "" {
+		pwd = FixtureDefaultPassword
+	}
+
 	ctx := c.Request.Context()
 
 	// 1. Create standard test accounts
-	createUser := func(username string, role model.UserRole) (*model.User, error) {
+	createUser := func(username string, password string, role model.UserRole) (*model.User, error) {
 		u, err := h.userRepo.GetByUsername(ctx, username)
 		if err == nil && u != nil {
+			// Update password to ensure deterministic credentials match request
+			hash, err := auth.HashPassword(password)
+			if err == nil {
+				_ = h.userRepo.UpdatePassword(ctx, u.ID, hash)
+			}
 			return u, nil
 		}
-		randomBytes := make([]byte, 16)
-		_, _ = rand.Read(randomBytes)
-		hash, _ := auth.HashPassword(hex.EncodeToString(randomBytes))
+		hash, err := auth.HashPassword(password)
+		if err != nil {
+			return nil, err
+		}
 		user := &model.User{
 			Username:     username,
 			PasswordHash: hash,
@@ -169,19 +185,19 @@ func (h *DevHandler) SeedFixtures(c *gin.Context) {
 		return user, nil
 	}
 
-	creator, err := createUser("test_creator", model.RoleUser)
+	creator, err := createUser(FixtureCreatorUsername, pwd, model.RoleUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed creating test_creator: " + err.Error()})
 		return
 	}
 
-	owner, err := createUser("test_owner", model.RoleUser)
+	owner, err := createUser(FixtureOwnerUsername, pwd, model.RoleUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed creating test_owner: " + err.Error()})
 		return
 	}
 
-	admin, err := createUser("test_admin", model.RoleAdmin)
+	admin, err := createUser(FixtureAdminUsername, pwd, model.RoleAdmin)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed creating test_admin: " + err.Error()})
 		return
@@ -194,6 +210,23 @@ func (h *DevHandler) SeedFixtures(c *gin.Context) {
 			"owner":   owner.Username,
 			"admin":   admin.Username,
 		},
+	}
+
+	if scenario == "disposable" {
+		randSuffix := make([]byte, 4)
+		_, _ = rand.Read(randSuffix)
+		suffix := hex.EncodeToString(randSuffix)
+		dispUsername := "disp_" + suffix
+		dispUser, err := createUser(dispUsername, pwd, model.RoleUser)
+		if err == nil {
+			dispWallet := &model.Wallet{
+				Name:      "Dompet Disposable " + suffix,
+				CreatorID: dispUser.ID,
+			}
+			_ = h.walletRepo.Create(ctx, dispWallet)
+			resp["disposable_user"] = dispUser.Username
+			resp["disposable_wallet_id"] = dispWallet.ID
+		}
 	}
 
 	if scenario == "standard" || scenario == "wallet_with_entries" || scenario == "linked" {

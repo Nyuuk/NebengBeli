@@ -38,8 +38,15 @@ export interface Entry {
   created_by: string;
   created_at: string;
   created_by_username?: string;
+  wallet_name?: string;
+  wallet_creator_username?: string;
+  wallet_owner_username?: string;
   running_balance?: number;
+  effective_amount?: number;
+  corrections?: Entry[];
   is_offline_pending?: boolean;
+  is_offline_failed?: boolean;
+  offline_error?: string;
 }
 
 export interface StatementSummary {
@@ -57,6 +64,7 @@ export interface StatementResponse {
   total: number;
   page: number;
   page_size: number;
+  cached_at?: string;
 }
 
 export type LinkRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -87,9 +95,12 @@ export interface AuditLog {
 
 export interface PendingOfflineEntry {
   client_id: string;
+  user_id?: string;
   wallet_id: string;
   type: EntryType;
   amount: number;
+  target_amount?: number;
+  final_nominal?: number;
   item_name: string;
   note: string;
   corrects_entry_id?: string | null;
@@ -97,4 +108,180 @@ export interface PendingOfflineEntry {
   occurred_at: string;
   created_at: string;
   retry_count: number;
+  status?: 'pending' | 'failed';
+  error_message?: string;
+}
+
+export interface AdminTrendPoint {
+  label: string;
+  count: number;
+  total_amount: number;
+}
+
+export interface AdminTrends {
+  daily: AdminTrendPoint[];
+  weekly: AdminTrendPoint[];
+  monthly: AdminTrendPoint[];
+}
+
+export interface AdminPeriodSummary {
+  total_titipan_count: number;
+  total_titipan_amount: number;
+  total_topup_count: number;
+  total_topup_amount: number;
+  total_koreksi_count: number;
+  total_koreksi_amount: number;
+  total_count: number;
+  total_volume: number;
+  net_balance: number;
+}
+
+export interface AdminEntriesFilter {
+  limit?: number;
+  offset?: number;
+  page?: number;
+  type?: EntryType;
+  wallet_id?: string;
+  creator_id?: string;
+  user_id?: string;
+  period?: string;
+  range?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface AdminEntriesResponse {
+  entries: Entry[];
+  total: number;
+  summary?: AdminPeriodSummary;
+  page: number;
+  limit: number;
+}
+
+export interface AdminCreatorDetail {
+  creator_id: string;
+  username: string;
+  total_wallets: number;
+  active_wallets: number;
+  archived_wallets: number;
+  total_titipan_count: number;
+  total_titipan_amount: number;
+  total_topup_count: number;
+  total_topup_amount: number;
+  total_koreksi_count: number;
+  total_koreksi_amount: number;
+  total_outstanding: number;
+}
+
+export interface AdminCreatorsResponse {
+  creators: AdminCreatorDetail[];
+  total: number;
+}
+
+export interface AdminSummaryResponse {
+  total_count: number;
+  summary: AdminPeriodSummary;
+}
+
+export interface ItemSuggestion {
+  item_name: string;
+  last_price: number;
+  frequency: number;
+}
+
+export interface BatchEntryItem {
+  client_id: string;
+  wallet_id: string;
+  type: EntryType;
+  amount: number;
+  item_name: string;
+  note?: string;
+  occurred_at?: string;
+}
+
+export interface BatchCreateEntriesPayload {
+  entries: BatchEntryItem[];
+}
+
+export interface BatchCreateEntriesResponse {
+  entries: Entry[];
+  count: number;
+}
+
+export interface CreatorInsights {
+  total_money_outside: number;
+  active_wallets_count: number;
+  total_wallets_count: number;
+  total_titipan_volume: number;
+  total_titipan_count: number;
+  daily_trends: { date: string; count: number; volume: number }[];
+  weekly_trends: { week: string; count: number; volume: number }[];
+  monthly_trends: { month: string; count: number; volume: number }[];
+  wallet_balances: {
+    wallet_id: string;
+    wallet_name: string;
+    balance: number;
+    owner_username?: string;
+    is_archived: boolean;
+  }[];
+  cached_at?: string;
+}
+
+export interface ShoppingSessionRow {
+  rowId: string;
+  wallet_id: string;
+  wallet_name?: string;
+  item_name: string;
+  amount_str: string;
+  amount: number;
+  note: string;
+}
+
+export interface ShoppingSessionDraft {
+  rows: ShoppingSessionRow[];
+  occurred_at: string;
+  saved_at: string;
+}
+
+export type RecapPeriod = 'today' | 'this_week' | 'this_month' | 'custom';
+
+export interface LegacyAdminTrendPoint {
+  period_label: string;
+  count: number;
+  volume: number;
+}
+
+export interface AdminTrendsData {
+  daily_trends: LegacyAdminTrendPoint[];
+  weekly_trends: LegacyAdminTrendPoint[];
+  monthly_trends: LegacyAdminTrendPoint[];
+}
+
+export interface AdminCreatorBreakdownItem {
+  creator_id: string;
+  creator_username: string;
+  wallet_count: number;
+  total_titipan_count: number;
+  total_titipan_volume: number;
+  total_outstanding_balance: number;
+}
+
+export interface AdminWalletBreakdownItem {
+  wallet_id: string;
+  wallet_name: string;
+  creator_username: string;
+  owner_username?: string;
+  balance: number;
+  entry_count: number;
+  is_archived: boolean;
+  created_at: string;
+}
+
+export interface AdminTransactionTypeBreakdown {
+  titipan_count: number;
+  titipan_volume: number;
+  topup_count: number;
+  topup_volume: number;
+  koreksi_count: number;
+  koreksi_volume: number;
 }

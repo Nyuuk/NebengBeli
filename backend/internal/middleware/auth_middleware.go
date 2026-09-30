@@ -48,13 +48,22 @@ func AuthMiddleware(jwtMgr *auth.JWTManager, authSvc service.AuthService) gin.Ha
 		}
 
 		// Verify token_version against database to support instant token revocation
-		user, err := authSvc.GetCurrentUser(c.Request.Context(), claims.UserID, claims.TokenVersion)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session expired or revoked, please login again"})
-			return
+		if authSvc != nil {
+			user, err := authSvc.GetCurrentUser(c.Request.Context(), claims.UserID, claims.TokenVersion)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session expired or revoked, please login again"})
+				return
+			}
+			c.Set(ContextKeyUser, user)
+		} else {
+			user := &model.User{
+				ID:           claims.UserID,
+				Username:     claims.Username,
+				Role:         claims.Role,
+				TokenVersion: claims.TokenVersion,
+			}
+			c.Set(ContextKeyUser, user)
 		}
-
-		c.Set(ContextKeyUser, user)
 		c.Next()
 	}
 }

@@ -13,13 +13,11 @@ import {
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LinkIcon from '@mui/icons-material/Link';
+import LockResetIcon from '@mui/icons-material/LockReset';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useOnlineStatus } from '../context/OnlineStatusContext';
-
 export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
-  const { pendingCount } = useOnlineStatus();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
@@ -33,14 +31,10 @@ export const Navbar: React.FC = () => {
 
   const handleLogout = async () => {
     handleMenuClose();
-    if (pendingCount > 0) {
-      const confirmLogout = window.confirm(
-        `Anda memiliki ${pendingCount} transaksi dalam antrean offline yang belum tersinkronisasi. Yakin ingin keluar?`
-      );
-      if (!confirmLogout) return;
+    const loggedOut = await logout();
+    if (loggedOut) {
+      navigate('/login');
     }
-    await logout();
-    navigate('/login');
   };
 
   return (
@@ -112,6 +106,9 @@ export const Navbar: React.FC = () => {
               </MenuItem>
               <MenuItem onClick={() => { handleMenuClose(); navigate('/links'); }}>
                 <LinkIcon fontSize="small" sx={{ mr: 1 }} /> Kelola Undangan
+              </MenuItem>
+              <MenuItem onClick={() => { handleMenuClose(); navigate('/change-password'); }}>
+                <LockResetIcon fontSize="small" sx={{ mr: 1 }} /> Ganti Kata Sandi
               </MenuItem>
               {user.role === 'admin' && (
                 <MenuItem onClick={() => { handleMenuClose(); navigate('/admin'); }}>

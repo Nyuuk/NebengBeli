@@ -10,6 +10,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { WalletDetailPage } from './pages/WalletDetailPage';
 import { LinkRequestsPage } from './pages/LinkRequestsPage';
 import { AdminPage } from './pages/AdminPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 const theme = createTheme({
@@ -106,6 +107,14 @@ export const App: React.FC = () => {
                 element={
                   <ProtectedRoute>
                     <LinkRequestsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/change-password"
+                element={
+                  <ProtectedRoute>
+                    <ChangePasswordPage />
                   </ProtectedRoute>
                 }
               />

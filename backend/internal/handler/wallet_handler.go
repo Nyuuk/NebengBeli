@@ -182,3 +182,46 @@ func (h *WalletHandler) Unarchive(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "wallet unarchived successfully"})
 }
+
+func (h *WalletHandler) Unlink(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idStr := c.Param("id")
+	walletID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid wallet id"})
+		return
+	}
+
+	if err := h.walletSvc.UnlinkWallet(c.Request.Context(), walletID, user.ID, user.Role); err != nil {
+		if err == service.ErrWalletPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "wallet unlinked successfully"})
+}
+
+func (h *WalletHandler) GetInsights(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	period := c.DefaultQuery("period", "month")
+	insights, err := h.walletSvc.GetCreatorInsights(c.Request.Context(), user.ID, period)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, insights)
+}

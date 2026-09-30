@@ -7,14 +7,27 @@ COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 
 COPY frontend/ ./
+ARG VITE_E2E_MODE=false
+ENV VITE_E2E_MODE=$VITE_E2E_MODE
 RUN npm run build
+
 
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
 
+RUN apk add --no-cache openssl
+
+# Generate fallback self-signed SSL certificate so HTTPS works out of the box
+RUN mkdir -p /etc/nginx/certs && \
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/certs/server.key \
+    -out /etc/nginx/certs/server.crt \
+    -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:172.17.0.1,IP:0.0.0.0"
+
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+EXPOSE 80 443
 
 CMD ["nginx", "-g", "daemon off;"]

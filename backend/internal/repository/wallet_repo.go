@@ -23,10 +23,12 @@ type WalletRepository interface {
 	UpdateName(ctx context.Context, id uuid.UUID, name string) error
 	SetArchived(ctx context.Context, id uuid.UUID, archive bool) error
 	SetOwner(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) error
+	UnlinkOwner(ctx context.Context, id uuid.UUID) error
 	ListByUser(ctx context.Context, userID uuid.UUID, includeArchived bool) ([]model.Wallet, error)
 	ListAll(ctx context.Context, limit, offset int) ([]model.Wallet, int64, error)
 	Count(ctx context.Context) (int64, int64, error) // total, active
 	IsUserAuthorized(ctx context.Context, walletID, userID uuid.UUID) (bool, error)
+	GetCreatorWalletsSummary(ctx context.Context, creatorID uuid.UUID) (int64, int64, int64, []model.Wallet, error)
 }
 
 type sqlWalletRepository struct {
@@ -322,4 +324,83 @@ func (r *sqlWalletRepository) IsUserAuthorized(ctx context.Context, walletID, us
 		return false, fmt.Errorf("failed to check wallet authorization: %w", err)
 	}
 	return authorized, nil
+}
+
+func (r *sqlWalletRepository) UnlinkOwner(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE wallets
+		SET owner_id = NULL
+		WHERE id = $1;
+	`
+	res, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to unlink wallet owner: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrWalletNotFound
+	}
+	return nil
+}
+
+func (r *sqlWalletRepository) GetCreatorWalletsSummary(ctx context.Context, creatorID uuid.UUID) (int64, int64, int64, []model.Wallet, error) {
+	query := `
+		SELECT
+			w.id, w.name, w.creator_id, w.owner_id, w.archived_at, w.created_at,
+			cu.username AS creator_username,
+			COALESCE(ou.username, '') AS owner_username,
+			COALESCE(SUM(e.amount), 0) AS balance,
+			COALESCE(COUNT(e.id), 0) AS entry_count
+		FROM wallets w
+		JOIN users cu ON w.creator_id = cu.id
+		LEFT JOIN users ou ON w.owner_id = ou.id
+		LEFT JOIN entries e ON e.wallet_id = w.id
+		WHERE w.creator_id = $1
+		GROUP BY w.id, cu.username, ou.username
+		ORDER BY balance DESC, w.created_at DESC;
+	`
+	rows, err := r.db.QueryContext(ctx, query, creatorID)
+	if err != nil {
+		return 0, 0, 0, nil, fmt.Errorf("failed to get creator wallets summary: %w", err)
+	}
+	defer rows.Close()
+
+	var totalOutstanding int64
+	var activeCount int64
+	var archivedCount int64
+	wallets := make([]model.Wallet, 0)
+
+	for rows.Next() {
+		var w model.Wallet
+		if err := rows.Scan(
+			&w.ID,
+			&w.Name,
+			&w.CreatorID,
+			&w.OwnerID,
+			&w.ArchivedAt,
+			&w.CreatedAt,
+			&w.CreatorUsername,
+			&w.OwnerUsername,
+			&w.Balance,
+			&w.EntryCount,
+		); err != nil {
+			return 0, 0, 0, nil, fmt.Errorf("failed to scan creator wallet: %w", err)
+		}
+		w.IsArchived = w.ArchivedAt != nil
+		if w.IsArchived {
+			archivedCount++
+		} else {
+			activeCount++
+			if w.Balance > 0 {
+				totalOutstanding += w.Balance
+			}
+		}
+		w.UserRole = "creator"
+		wallets = append(wallets, w)
+	}
+
+	return totalOutstanding, activeCount, archivedCount, wallets, nil
 }
