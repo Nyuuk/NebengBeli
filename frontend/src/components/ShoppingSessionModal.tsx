@@ -50,6 +50,20 @@ interface ShoppingSessionModalProps {
   onSuccess: (savedCount: number, isOffline?: boolean) => void;
 }
 
+export const isRowBlank = (r: ShoppingSessionRow): boolean => {
+  return (
+    !r.wallet_id &&
+    !r.item_name.trim() &&
+    !r.amount_str.trim() &&
+    !r.note.trim() &&
+    (!r.amount || r.amount === 0)
+  );
+};
+
+export const isRowValid = (r: ShoppingSessionRow): boolean => {
+  return Boolean(r.wallet_id) && Boolean(r.item_name.trim()) && r.amount > 0;
+};
+
 const emptyRow = (): ShoppingSessionRow => ({
   rowId: uuidv4(),
   wallet_id: '',
@@ -122,7 +136,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   // Autosave draft on change
   useEffect(() => {
     if (!open) return;
-    const hasAnyContent = rows.some((r) => r.wallet_id || r.item_name || r.amount_str);
+    const hasAnyContent = rows.some((r) => !isRowBlank(r));
     if (hasAnyContent) {
       saveShoppingDraft({
         rows,
@@ -188,20 +202,29 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   }, [rows]);
 
   const validRows = useMemo(() => {
-    return rows.filter((r) => r.wallet_id && r.item_name.trim() && r.amount > 0);
+    return rows.filter(isRowValid);
   }, [rows]);
 
   const handleSaveAll = async () => {
     setError(null);
-    if (validRows.length === 0) {
+
+    const nonBlankRows = rows.filter((r) => !isRowBlank(r));
+
+    if (nonBlankRows.length === 0) {
       setError('Mohon isi minimal 1 baris titipan dengan buku, nama item, dan nominal yang valid.');
+      return;
+    }
+
+    const hasInvalidRow = nonBlankRows.some((r) => !isRowValid(r));
+    if (hasInvalidRow) {
+      setError('Terdapat baris titipan yang belum lengkap. Mohon lengkapi buku, nama barang, dan nominal, atau hapus baris tersebut.');
       return;
     }
 
     setIsSubmitting(true);
     const occurredDateISO = occurredAt ? new Date(occurredAt).toISOString() : new Date().toISOString();
 
-    const batchPayload: BatchEntryItem[] = validRows.map((r) => ({
+    const batchPayload: BatchEntryItem[] = nonBlankRows.map((r) => ({
       client_id: uuidv4(),
       wallet_id: r.wallet_id,
       type: 'titipan',

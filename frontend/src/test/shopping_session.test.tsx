@@ -6,6 +6,7 @@ import {
   saveShoppingDraft,
   clearShoppingDraft,
   clearAllOfflineEntries,
+  getPendingOfflineCount,
   resetDBInstance,
 } from '../offline/db';
 import * as entriesApi from '../api/entries';
@@ -503,5 +504,232 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
     expect((itemInput1 as HTMLInputElement).value).toBe('Barang Tanpa Harga');
     const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' }) as HTMLInputElement;
     expect(amountInput1.value).toBe('');
+  });
+
+  it('blocks mixed valid + invalid batch with Indonesian validation error and makes zero online API writes', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockResolvedValue({
+      entries: [],
+      count: 1,
+    });
+    const createSpy = vi.spyOn(entriesApi, 'createEntryApi');
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Row 1 - valid
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.change(itemInput1, { target: { value: 'Es Kopi' } });
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' });
+    fireEvent.change(amountInput1, { target: { value: '15000' } });
+
+    // Row 2 - invalid (wallet selected, but item and amount empty)
+    const walletInput2 = screen.getByRole('combobox', { name: 'Buku baris 2' });
+    fireEvent.focus(walletInput2);
+    fireEvent.change(walletInput2, { target: { value: 'Budi' } });
+    fireEvent.keyDown(walletInput2, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput2, { key: 'Enter' });
+
+    // Submit batch
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    // Assert visible Indonesian error and zero API writes
+    await waitFor(() => {
+      expect(screen.getByText(/Terdapat baris titipan yang belum lengkap/i)).toBeDefined();
+    });
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(handleSuccess).not.toHaveBeenCalled();
+    expect(handleClose).not.toHaveBeenCalled();
+  });
+
+  it('blocks mixed valid + invalid batch in offline mode with Indonesian validation error and makes zero offline queue writes', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi');
+    const createSpy = vi.spyOn(entriesApi, 'createEntryApi');
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Row 1 - valid
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.change(itemInput1, { target: { value: 'Es Kopi' } });
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' });
+    fireEvent.change(amountInput1, { target: { value: '15000' } });
+
+    // Row 2 - invalid (item typed, but wallet and amount empty)
+    const itemInput2 = screen.getByRole('combobox', { name: 'Barang baris 2' });
+    fireEvent.change(itemInput2, { target: { value: 'Nasi Bungkus' } });
+
+    // Submit batch
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Terdapat baris titipan yang belum lengkap/i)).toBeDefined();
+    });
+
+    // Zero writes
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(await getPendingOfflineCount()).toBe(0);
+    expect(handleSuccess).not.toHaveBeenCalled();
+    expect(handleClose).not.toHaveBeenCalled();
+  });
+
+  it('proceeds with valid two-row batch save when both rows are complete', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockResolvedValue({
+      entries: [],
+      count: 2,
+    });
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Row 1
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.change(itemInput1, { target: { value: 'Es Kopi' } });
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' });
+    fireEvent.change(amountInput1, { target: { value: '18000' } });
+
+    // Row 2
+    const walletInput2 = screen.getByRole('combobox', { name: 'Buku baris 2' });
+    fireEvent.focus(walletInput2);
+    fireEvent.change(walletInput2, { target: { value: 'Budi' } });
+    fireEvent.keyDown(walletInput2, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput2, { key: 'Enter' });
+
+    const itemInput2 = screen.getByRole('combobox', { name: 'Barang baris 2' });
+    fireEvent.change(itemInput2, { target: { value: 'Nasi Ayam' } });
+
+    const amountInput2 = screen.getByRole('textbox', { name: 'Harga baris 2' });
+    fireEvent.change(amountInput2, { target: { value: '25000' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(batchSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            wallet_id: 'w-1',
+            item_name: 'Es Kopi',
+            amount: 18000,
+          }),
+          expect.objectContaining({
+            wallet_id: 'w-2',
+            item_name: 'Nasi Ayam',
+            amount: 25000,
+          }),
+        ])
+      );
+      expect(handleSuccess).toHaveBeenCalledWith(2, false);
+      expect(handleClose).toHaveBeenCalled();
+    });
+  });
+
+  it('ignores wholly blank extra row and proceeds with single valid row save', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockResolvedValue({
+      entries: [],
+      count: 1,
+    });
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Row 1 - valid
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.change(itemInput1, { target: { value: 'Kopi Susu' } });
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' });
+    fireEvent.change(amountInput1, { target: { value: '15000' } });
+
+    // Row 2 is left wholly blank
+
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(batchSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            wallet_id: 'w-1',
+            item_name: 'Kopi Susu',
+            amount: 15000,
+          }),
+        ])
+      );
+      expect(batchSpy.mock.calls[0][0].length).toBe(1);
+      expect(handleSuccess).toHaveBeenCalledWith(1, false);
+      expect(handleClose).toHaveBeenCalled();
+    });
   });
 });
