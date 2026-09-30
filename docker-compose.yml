@@ -52,7 +52,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        VITE_E2E_MODE: "true"
     container_name: nebengbeli-frontend
+
     restart: unless-stopped
     depends_on:
       backend:

@@ -8,9 +8,11 @@ To enable deterministic and reliable browser-level E2E automated tests (e.g. Cam
 
 ## 1. Security & Fail-Closed Guardrails
 
-1. **Loopback Localhost & Development Guard**: The seam is initialized at entrypoint (`src/main.tsx` via `initOfflineNetworkSeam()`) and is strictly active only when loaded on loopback localhost (`localhost`, `127.0.0.1`, `::1`), explicit `__E2E_MODE__`, or Vite `DEV`/`test` mode.
-2. **Production & Non-Localhost Immunity**: In non-localhost, private LAN, staging, or public production deployments (e.g. `nebengbeli.nyuuk.my.id`, `nebengbeli.com`), any attempt to attach or force offline mode is rejected, inert, and ignored, ensuring that user traffic operates strictly with true `navigator.onLine` status.
-3. **Fail-Closed Client Requests**: When simulated offline mode is active, `client.ts` rejects immediately with `ApiError('You are currently offline (E2E simulation mode)', 0)` before issuing any network requests.
+1. **Loopback Localhost & Bridge Intent Guard**: The seam is initialized at entrypoint (`src/main.tsx` via `initOfflineNetworkSeam()`) and is strictly active on loopback localhost (`localhost`, `127.0.0.1`, `::1`), Vite `DEV`/`test` mode, or on the Docker bridge host (`172.17.0.1`) when explicit test intent (`__E2E_MODE__`) is present.
+2. **Local E2E Preload in Compose Path**: For containerized local browser testing against the Docker bridge (`172.17.0.1`), the Compose build path injects a safe preload script (`window.__E2E_MODE__ = true;`) via `VITE_E2E_MODE=true` into the HTML `<head>` before the bundle executes. Standard/production builds default to `VITE_E2E_MODE=false` (fail-closed).
+3. **Production & Non-Localhost Immunity**: In non-localhost, private LAN, staging, or public production deployments (e.g. `nebengbeli.nyuuk.my.id`, `nebengbeli.com`), any attempt to attach or force offline mode is rejected, inert, and ignored, ensuring that user traffic operates strictly with true `navigator.onLine` status.
+4. **Fail-Closed Client Requests**: When simulated offline mode is active, `client.ts` rejects immediately with `ApiError('You are currently offline (E2E simulation mode)', 0)` before issuing any network requests.
+
 
 ---
 

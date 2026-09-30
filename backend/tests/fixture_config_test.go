@@ -65,3 +65,49 @@ func TestE2EFixturesScriptEndpointSelectionAndHelp(t *testing.T) {
 		t.Errorf("expected usage output to mention USE_HTTPS, got: %s", combinedOutput)
 	}
 }
+
+func TestE2EPreloadConfiguration(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working dir: %v", err)
+	}
+
+	repoRoot := filepath.Join(wd, "..", "..")
+	if _, err := os.Stat(filepath.Join(repoRoot, "docker-compose.yml")); os.IsNotExist(err) {
+		repoRoot = filepath.Join(wd, "..")
+	}
+
+	// 1. Verify Dockerfile.frontend ARG VITE_E2E_MODE=false (fail-closed default)
+	dockerfileBytes, err := os.ReadFile(filepath.Join(repoRoot, "Dockerfile.frontend"))
+	if err != nil {
+		t.Fatalf("failed to read Dockerfile.frontend: %v", err)
+	}
+	dockerfileContent := string(dockerfileBytes)
+	if !strings.Contains(dockerfileContent, "ARG VITE_E2E_MODE=false") {
+		t.Errorf("Dockerfile.frontend must define fail-closed default 'ARG VITE_E2E_MODE=false'")
+	}
+	if !strings.Contains(dockerfileContent, "ENV VITE_E2E_MODE=$VITE_E2E_MODE") {
+		t.Errorf("Dockerfile.frontend must pass ENV VITE_E2E_MODE=$VITE_E2E_MODE to build step")
+	}
+
+	// 2. Verify docker-compose.yml passes VITE_E2E_MODE: "true" for local E2E harness
+	composeBytes, err := os.ReadFile(filepath.Join(repoRoot, "docker-compose.yml"))
+	if err != nil {
+		t.Fatalf("failed to read docker-compose.yml: %v", err)
+	}
+	composeContent := string(composeBytes)
+	if !strings.Contains(composeContent, `VITE_E2E_MODE: "true"`) {
+		t.Errorf("docker-compose.yml must specify frontend build arg VITE_E2E_MODE: \"true\"")
+	}
+
+	// 3. Verify frontend/vite.config.ts contains E2E preload plugin
+	viteConfigBytes, err := os.ReadFile(filepath.Join(repoRoot, "frontend", "vite.config.ts"))
+	if err != nil {
+		t.Fatalf("failed to read frontend/vite.config.ts: %v", err)
+	}
+	viteConfigContent := string(viteConfigBytes)
+	if !strings.Contains(viteConfigContent, "e2e-preload-plugin") || !strings.Contains(viteConfigContent, "window.__E2E_MODE__ = true;") {
+		t.Errorf("frontend/vite.config.ts must configure e2e-preload-plugin with window.__E2E_MODE__ = true;")
+	}
+}
+
