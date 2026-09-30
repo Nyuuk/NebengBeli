@@ -13,6 +13,7 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   release:
@@ -79,18 +80,23 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-      # Cross-Repository Dispatch Prerequisite:
-      # This step uses GITHUB_TOKEN only as specified.
-      # By default, GitHub Actions GITHUB_TOKEN is scoped to this repository (Nyuuk/NebengBeli).
-      # If cross-repo dispatch to Nyuuk/kube-config is restricted by GitHub's security boundary
-      # (e.g. 403 / Resource not accessible), ensure that:
-      #   1. Repository Actions settings permit cross-repository access, OR
-      #   2. A fine-grained PAT / GitHub App token with 'contents: write' scope on Nyuuk/kube-config
-      #      is configured (e.g., secrets.DISPATCH_PAT) if cross-repo authorization fails.
+      # Cross-Repository Dispatch Authorization:
+      # Fetches GITHUB_TOKEN from HashiCorp Vault via GitHub OIDC JWT auth (matching My App pattern),
+      # avoiding static repository secrets. Fails closed if GITHUB_TOKEN is unset or empty.
+      - name: Fetch secrets from Vault
+        uses: ./.github/actions/vault-secrets
+
+      - name: Verify GitHub Token
+        run: |
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "::error::GITHUB_TOKEN is unset or empty after fetching from Vault"
+            exit 1
+          fi
+
       - name: Dispatch Deploy Event to Nyuuk/kube-config
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ env.GITHUB_TOKEN }}
           script: |
             const fullSha = '${{ steps.meta.outputs.full_sha }}';
             const tag = `sha-${fullSha}`;

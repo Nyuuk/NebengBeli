@@ -85,7 +85,9 @@ Images are built and published to GitHub Container Registry (GHCR) upon successf
 
 ### Release Workflow (`.github/workflows/release.yml`)
 - **Trigger**: Automatically executes on `workflow_run` completion when the `CI` workflow succeeds on branch `main` (or via manual `workflow_dispatch`).
-- **Permissions**: Minimum permissions (`contents: read`, `packages: write`). No `kubectl` or `Vault` credentials required in the release workflow.
+- **Permissions**: Minimum required permissions (`contents: read`, `packages: write`, `id-token: write` for GitHub OIDC authentication to HashiCorp Vault).
+- **Secrets Management**: No static repository secrets or manual PATs are stored in repository settings. The workflow invokes `.github/actions/vault-secrets` to authenticate against HashiCorp Vault via GitHub OIDC JWT auth (`path: jwt-github`, `role: nyuuk`) and dynamically exports `GITHUB_TOKEN` into `GITHUB_ENV`.
+- **Fail-Closed Security**: The workflow explicitly validates that `GITHUB_TOKEN` is non-empty before initiating dispatch, failing immediately if Vault token retrieval fails.
 - **Concurrency**: Grouped by `release-${{ github.ref }}` with `cancel-in-progress: false` to prevent overlapping releases.
 
 ### Dispatch Event Payload Specification
@@ -107,6 +109,7 @@ This nested JSON structure allows `kube-config/.github/workflows/cd.yaml` to upd
 ### Migration/Server Startup Ordering (required kube-config correction)
 The Job invocation above is the exact contract: `exec /app/nebengbeli-cli migrate`; the backend image's default entrypoint remains `/app/nebengbeli-server`. The server currently also runs `database.RunMigrations` before binding HTTP, so the application is safe if the Job and server start concurrently (the migration transaction and `schema_migrations` primary key prevent a successful duplicate version record). However, the CD workflow must not treat the Job as complete merely because the Job manifest was applied: Atlas must make the deployment orchestration wait for the migration Job to reach `Complete` (and fail on `Failed`) before declaring the backend rollout ready. This is a required kube-config change; this application PR does not modify kube-config or disable the server safety fallback.
 
-### Cross-Repository Authorization Prerequisite
-The release workflow calls the GitHub REST API using `GITHUB_TOKEN`.
-- If `Nyuuk/kube-config` is a separate private repository and default `GITHUB_TOKEN` cross-repository access is restricted by GitHub organization policies, a repository secret (e.g. Personal Access Token or GitHub App token with `repo` / `contents: write` permissions on `Nyuuk/kube-config`) can be configured if needed.
+### Cross-Repository Authorization Contract
+The release workflow dispatches the deploy event using `github-token: ${{ env.GITHUB_TOKEN }}` obtained dynamically from HashiCorp Vault via GitHub Actions OIDC JWT auth matching the My App action pattern (`.github/actions/vault-secrets`).
+- No GitHub repository secrets or static personal access tokens (PATs) are required or configured in the repository.
+- Cross-repository access to `Nyuuk/kube-config` is authorized via the Vault-managed GitHub token.
