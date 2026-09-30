@@ -23,11 +23,19 @@ RUN mkdir -p /etc/nginx/certs && \
     -keyout /etc/nginx/certs/server.key \
     -out /etc/nginx/certs/server.crt \
     -subj "/CN=localhost" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:172.17.0.1,IP:0.0.0.0"
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:172.17.0.1,IP:0.0.0.0" && \
+    chmod 644 /etc/nginx/certs/server.crt /etc/nginx/certs/server.key && \
+    chmod 755 /etc/nginx/certs
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
-EXPOSE 80 443
+# Ensure static files and certs are readable by unprivileged user
+RUN chown -R nginx:nginx /usr/share/nginx/html /etc/nginx/certs && \
+    chmod -R 755 /usr/share/nginx/html
+
+EXPOSE 8080 8443
+
+USER nginx
 
 CMD ["nginx", "-g", "daemon off;"]

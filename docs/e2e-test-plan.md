@@ -28,7 +28,7 @@
 |                                                                         |
 |  +-------------------------------------------------------------------+  |
 |  | Frontend / Reverse Proxy Container (`nebengbeli-frontend`)         |  |
-|  | - Ports: 8088:80 (HTTP), 8443:443 (HTTPS with TLS SAN)            |  |
+|  | - Ports: 8088:8080 (HTTP), 8443:8443 (HTTPS with TLS SAN)          |  |
 |  | - Static Assets: Vite React PWA (/manifest.json, /sw.js)          |  |
 |  | - Proxy /api/*, /healthz, /readyz -> http://backend:8080           |  |
 |  +-------------------------------------------------------------------+  |
