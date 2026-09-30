@@ -23,16 +23,14 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  ButtonGroup,
-  LinearProgress,
 } from '@mui/material';
 import PeopleIcon from '@mui/icons-material/People';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import SecurityIcon from '@mui/icons-material/Security';
-import KeyIcon from '@mui/icons-material/Key';
-import AssessmentIcon from '@mui/icons-material/Assessment';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import AssessmentIcon from '@mui/icons-material/Assessment';
+import KeyIcon from '@mui/icons-material/Key';
 import { Layout } from '../components/Layout';
 import { formatRupiah } from '../components/BalanceCard';
 import {
@@ -41,21 +39,32 @@ import {
   adminResetPasswordApi,
   adminListWalletsApi,
   adminListAuditLogsApi,
-  adminGetTrendsAdapterApi,
-  adminGetBreakdownsAdapterApi,
+  adminListEntriesApi,
+  adminGetSummaryApi,
+  adminListCreatorsApi,
+  adminGetTrendsApi,
   AdminStats,
-  AdminBreakdownResponse,
 } from '../api/admin';
-import { User, Wallet, AuditLog, AdminTrendsData } from '../types';
+import {
+  User,
+  Wallet,
+  AuditLog,
+  Entry,
+  AdminPeriodSummary,
+  AdminCreatorDetail,
+  AdminTrends,
+} from '../types';
 
 export const AdminPage: React.FC = () => {
   const [tab, setTab] = useState<number>(0);
+  const [trendSubTab, setTrendSubTab] = useState<number>(0);
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [trends, setTrends] = useState<AdminTrendsData | null>(null);
-  const [breakdown, setBreakdown] = useState<AdminBreakdownResponse | null>(null);
-  const [trendPeriod, setTrendPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [users, setUsers] = useState<User[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entriesSummary, setEntriesSummary] = useState<AdminPeriodSummary | null>(null);
+  const [creators, setCreators] = useState<AdminCreatorDetail[]>([]);
+  const [trends, setTrends] = useState<AdminTrends | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,24 +82,60 @@ export const AdminPage: React.FC = () => {
       setError(null);
 
       if (tab === 0) {
-        const [statsData, trendsData, breakdownData] = await Promise.all([
+        const [statsData, usersData] = await Promise.all([
           adminGetStatsApi(),
-          adminGetTrendsAdapterApi(),
-          adminGetBreakdownsAdapterApi(),
+          adminListUsersApi(50, 0),
         ]);
         setStats(statsData?.stats || null);
-        setTrends(trendsData?.trends || null);
-        setBreakdown(breakdownData || null);
-      } else if (tab === 1) {
-        const breakdownData = await adminGetBreakdownsAdapterApi();
-        setBreakdown(breakdownData || null);
-      } else if (tab === 2) {
-        const usersData = await adminListUsersApi(50, 0);
         setUsers(usersData?.users || []);
-      } else if (tab === 3) {
+      } else if (tab === 1) {
         const walletsData = await adminListWalletsApi(50, 0);
         setWallets(walletsData?.wallets || []);
+      } else if (tab === 2) {
+        try {
+          const [entriesData, summaryData] = await Promise.all([
+            adminListEntriesApi({ limit: 50, offset: 0 }),
+            adminGetSummaryApi(),
+          ]);
+          setEntries(entriesData?.entries || []);
+          setEntriesSummary(summaryData?.summary || entriesData?.summary || null);
+        } catch (err: unknown) {
+          const apiErr = err as { status?: number; message?: string };
+          if (apiErr.status === 404) {
+            // Backwards compatibility fallback if backend does not support admin entries endpoint
+            setEntries([]);
+            setEntriesSummary(null);
+          } else {
+            throw err;
+          }
+        }
+      } else if (tab === 3) {
+        try {
+          const creatorsData = await adminListCreatorsApi();
+          setCreators(creatorsData?.creators || []);
+        } catch (err: unknown) {
+          const apiErr = err as { status?: number; message?: string };
+          if (apiErr.status === 404) {
+            // Backwards compatibility fallback
+            setCreators([]);
+          } else {
+            throw err;
+          }
+        }
       } else if (tab === 4) {
+        try {
+          const trendsData = await adminGetTrendsApi();
+          setTrends(trendsData?.trends || null);
+        } catch (err: unknown) {
+          const apiErr = err as { status?: number; message?: string };
+          if (apiErr.status === 404) {
+            // Backwards compatibility fallback
+            setTrends(null);
+          } else {
+            throw err;
+          }
+        }
+      } else if (tab === 5) {
         const auditsData = await adminListAuditLogsApi({ limit: 50, offset: 0 });
         setAuditLogs(auditsData?.audit_logs || []);
       }
@@ -126,15 +171,6 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  const activeTrends =
-    trendPeriod === 'daily'
-      ? trends?.daily_trends || []
-      : trendPeriod === 'weekly'
-      ? trends?.weekly_trends || []
-      : trends?.monthly_trends || [];
-
-  const maxTrendVolume = Math.max(...activeTrends.map((t) => t.volume), 1);
-
   return (
     <Layout>
       <Box sx={{ mb: 3 }}>
@@ -142,7 +178,7 @@ export const AdminPage: React.FC = () => {
           Admin & System Control Panel
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Pemantauan sistem, tren titipan, analisis rincian keuangan, audit log aktivitas, dan pengelolaan kredensial
+          Pemantauan sistem, analisis perputaran dana, audit log, dan pengelolaan kredensial
         </Typography>
       </Box>
 
@@ -158,14 +194,67 @@ export const AdminPage: React.FC = () => {
         </Alert>
       )}
 
-      {/* Admin Navigation Tabs */}
+      {stats && (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card elevation={1} sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <PeopleIcon sx={{ fontSize: 40, color: 'primary.main' }} />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Total Pengguna</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total_users}</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} sm={6} md={3}>
+            <Card elevation={1} sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <AccountBalanceWalletIcon sx={{ fontSize: 40, color: '#0288d1' }} />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Buku Aktif / Total</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.active_wallets} / {stats.total_wallets}</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} sm={6} md={3}>
+            <Card elevation={1} sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <ReceiptLongIcon sx={{ fontSize: 40, color: '#388e3c' }} />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Total Transaksi</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total_entries}</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} sm={6} md={3}>
+            <Card elevation={1} sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <SecurityIcon sx={{ fontSize: 40, color: '#f57c00' }} />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Volume Perputaran</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatRupiah(stats.total_volume)}</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* Admin Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tab} onChange={(_, val) => setTab(val)}>
-          <Tab icon={<TrendingUpIcon fontSize="small" />} iconPosition="start" label="Dashboard & Tren" />
-          <Tab icon={<AssessmentIcon fontSize="small" />} iconPosition="start" label="Rincian Pembuat & Buku" />
-          <Tab icon={<PeopleIcon fontSize="small" />} iconPosition="start" label="Pengguna (Users)" />
-          <Tab icon={<AccountBalanceWalletIcon fontSize="small" />} iconPosition="start" label="Semua Buku (Wallets)" />
-          <Tab icon={<SecurityIcon fontSize="small" />} iconPosition="start" label="Audit Logs" />
+        <Tabs value={tab} onChange={(_, val) => setTab(val)} variant="scrollable" scrollButtons="auto">
+          <Tab icon={<PeopleIcon />} iconPosition="start" label="Pengguna (Users)" />
+          <Tab icon={<AccountBalanceWalletIcon />} iconPosition="start" label="Semua Buku (Wallets)" />
+          <Tab icon={<ReceiptLongIcon />} iconPosition="start" label="Semua Transaksi (Entries)" />
+          <Tab icon={<AssessmentIcon />} iconPosition="start" label="Rekap Pembuat (Creators)" />
+          <Tab icon={<TrendingUpIcon />} iconPosition="start" label="Tren Sistem (Trends)" />
+          <Tab icon={<SecurityIcon />} iconPosition="start" label="Audit Logs" />
         </Tabs>
       </Box>
 
@@ -175,276 +264,8 @@ export const AdminPage: React.FC = () => {
         </Box>
       ) : (
         <>
-          {/* TAB 0: Dashboard & Trends */}
+          {/* TAB 0: USERS */}
           {tab === 0 && (
-            <Box>
-              {stats && (
-                <Grid container spacing={2} sx={{ mb: 3 }}>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Card elevation={1} sx={{ borderRadius: 2 }}>
-                      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <PeopleIcon sx={{ fontSize: 40, color: 'primary.main' }} />
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">Total Pengguna</Typography>
-                          <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total_users}</Typography>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Card elevation={1} sx={{ borderRadius: 2 }}>
-                      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <AccountBalanceWalletIcon sx={{ fontSize: 40, color: '#0288d1' }} />
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">Buku Aktif / Total</Typography>
-                          <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.active_wallets} / {stats.total_wallets}</Typography>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Card elevation={1} sx={{ borderRadius: 2 }}>
-                      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <ReceiptLongIcon sx={{ fontSize: 40, color: '#388e3c' }} />
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">Total Transaksi</Typography>
-                          <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total_entries}</Typography>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Card elevation={1} sx={{ borderRadius: 2 }}>
-                      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <SecurityIcon sx={{ fontSize: 40, color: '#f57c00' }} />
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">Volume Perputaran</Typography>
-                          <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatRupiah(stats.total_volume)}</Typography>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                </Grid>
-              )}
-
-              {/* Trends Card */}
-              <Grid container spacing={3} sx={{ mb: 3 }}>
-                <Grid item xs={12} md={7}>
-                  <Card elevation={1} sx={{ borderRadius: 2, p: 2.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        Grafik Tren Titipan Belanja
-                      </Typography>
-                      <ButtonGroup size="small">
-                        <Button
-                          variant={trendPeriod === 'daily' ? 'contained' : 'outlined'}
-                          onClick={() => setTrendPeriod('daily')}
-                        >
-                          Harian
-                        </Button>
-                        <Button
-                          variant={trendPeriod === 'weekly' ? 'contained' : 'outlined'}
-                          onClick={() => setTrendPeriod('weekly')}
-                        >
-                          Mingguan
-                        </Button>
-                        <Button
-                          variant={trendPeriod === 'monthly' ? 'contained' : 'outlined'}
-                          onClick={() => setTrendPeriod('monthly')}
-                        >
-                          Bulanan
-                        </Button>
-                      </ButtonGroup>
-                    </Box>
-
-                    {activeTrends.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
-                        Belum ada data tren tercatat.
-                      </Typography>
-                    ) : (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {activeTrends.map((t, idx) => {
-                          const percent = Math.min(100, Math.round((t.volume / maxTrendVolume) * 100));
-                          return (
-                            <Box key={idx}>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                                  {t.period_label} ({t.count} transaksi)
-                                </Typography>
-                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                                  {formatRupiah(t.volume)}
-                                </Typography>
-                              </Box>
-                              <LinearProgress
-                                variant="determinate"
-                                value={percent}
-                                sx={{ height: 8, borderRadius: 4, bgcolor: '#e2e8f0' }}
-                              />
-                            </Box>
-                          );
-                        })}
-                      </Box>
-                    )}
-                  </Card>
-                </Grid>
-
-                {/* Transaction Type Breakdown Card */}
-                {breakdown?.transaction_types && (
-                  <Grid item xs={12} md={5}>
-                    <Card elevation={1} sx={{ borderRadius: 2, p: 2.5, height: '100%' }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
-                        Rincian Jenis Transaksi
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <Box sx={{ p: 1.5, bgcolor: '#ffebee', borderRadius: 2 }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#c62828' }}>
-                              Titipan (Debit)
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#c62828' }}>
-                              {formatRupiah(breakdown.transaction_types.titipan_volume)}
-                            </Typography>
-                          </Box>
-                          <Typography variant="caption" color="text.secondary">
-                            {breakdown.transaction_types.titipan_count} transaksi belanja ditalangi
-                          </Typography>
-                        </Box>
-
-                        <Box sx={{ p: 1.5, bgcolor: '#e8f5e9', borderRadius: 2 }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#2e7d32' }}>
-                              Top-up / Pelunasan (Kredit)
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#2e7d32' }}>
-                              {formatRupiah(breakdown.transaction_types.topup_volume)}
-                            </Typography>
-                          </Box>
-                          <Typography variant="caption" color="text.secondary">
-                            {breakdown.transaction_types.topup_count} pembayaran diterima
-                          </Typography>
-                        </Box>
-
-                        <Box sx={{ p: 1.5, bgcolor: '#fff3e0', borderRadius: 2 }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#ef6c00' }}>
-                              Koreksi & Penyesuaian
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#ef6c00' }}>
-                              {formatRupiah(breakdown.transaction_types.koreksi_volume)}
-                            </Typography>
-                          </Box>
-                          <Typography variant="caption" color="text.secondary">
-                            {breakdown.transaction_types.koreksi_count} koreksi nominal/pembatalan
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </Card>
-                  </Grid>
-                )}
-              </Grid>
-            </Box>
-          )}
-
-          {/* TAB 1: Breakdown per Creator & Wallet */}
-          {tab === 1 && breakdown && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {/* Creator Breakdown Table */}
-              <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #eee' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                    Rincian Aktivitas per Pembuat Ledger (OB/GA)
-                  </Typography>
-                </Box>
-                <TableContainer>
-                  <Table>
-                    <TableHead sx={{ bgcolor: '#f1f5f9' }}>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Pembuat</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 700 }}>Jumlah Buku Dikelola</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 700 }}>Total Titipan</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>Total Saldo Belum Lunas</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {breakdown.creators.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
-                            Belum ada pembuat buku aktif.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        breakdown.creators.map((c) => (
-                          <TableRow key={c.creator_id} hover>
-                            <TableCell sx={{ fontWeight: 600 }}>{c.creator_username}</TableCell>
-                            <TableCell align="center">{c.wallet_count} buku</TableCell>
-                            <TableCell align="center">{c.total_titipan_count}x</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 700, color: '#d32f2f' }}>
-                              {formatRupiah(c.total_outstanding_balance)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Paper>
-
-              {/* Wallet Breakdown Table */}
-              <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #eee' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                    Rincian per Buku Ledger (Wallets) & Status Saldo
-                  </Typography>
-                </Box>
-                <TableContainer>
-                  <Table>
-                    <TableHead sx={{ bgcolor: '#f1f5f9' }}>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Nama Buku</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Pembuat</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Pemilik (Owner)</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 700 }}>Jumlah Entri</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>Saldo Saat Ini</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {breakdown.wallets.map((w) => (
-                        <TableRow key={w.wallet_id} hover>
-                          <TableCell sx={{ fontWeight: 600 }}>{w.wallet_name}</TableCell>
-                          <TableCell>{w.creator_username}</TableCell>
-                          <TableCell>{w.owner_username ? `@${w.owner_username}` : '(unlinked)'}</TableCell>
-                          <TableCell align="center">{w.entry_count}</TableCell>
-                          <TableCell
-                            align="right"
-                            sx={{
-                              fontWeight: 700,
-                              color: w.balance > 0 ? '#d32f2f' : w.balance < 0 ? '#0288d1' : '#2e7d32',
-                            }}
-                          >
-                            {formatRupiah(w.balance)}
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={w.is_archived ? 'Diarsipkan' : 'Aktif'}
-                              size="small"
-                              color={w.is_archived ? 'default' : 'success'}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Paper>
-            </Box>
-          )}
-
-          {/* TAB 2: Users */}
-          {tab === 2 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
                 <Table>
@@ -499,8 +320,8 @@ export const AdminPage: React.FC = () => {
             </Paper>
           )}
 
-          {/* TAB 3: All Wallets */}
-          {tab === 3 && (
+          {/* TAB 1: WALLETS */}
+          {tab === 1 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
                 <Table>
@@ -537,8 +358,218 @@ export const AdminPage: React.FC = () => {
             </Paper>
           )}
 
-          {/* TAB 4: Audit Logs */}
+          {/* TAB 2: ENTRIES & SUMMARY */}
+          {tab === 2 && (
+            <Box>
+              {entriesSummary && (
+                <Grid container spacing={2} sx={{ mb: 2.5 }}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <Typography variant="caption" color="text.secondary">Total Transaksi Titipan</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                        {formatRupiah(entriesSummary.total_titipan_amount)} ({entriesSummary.total_titipan_count})
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <Typography variant="caption" color="text.secondary">Total Pembayaran Top-up</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#0288d1' }}>
+                        {formatRupiah(Math.abs(entriesSummary.total_topup_amount))} ({entriesSummary.total_topup_count})
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <Typography variant="caption" color="text.secondary">Total Penyesuaian Koreksi</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#f57c00' }}>
+                        {formatRupiah(entriesSummary.total_koreksi_amount)} ({entriesSummary.total_koreksi_count})
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <Typography variant="caption" color="text.secondary">Saldo Bersih / Total Volume</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#388e3c' }}>
+                        {formatRupiah(entriesSummary.net_balance)} / {formatRupiah(entriesSummary.total_volume)}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              )}
+
+              <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                <TableContainer>
+                  <Table>
+                    <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Nama Item / Keterangan</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Buku (Wallet)</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Pembuat</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Tipe</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Nominal</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Waktu</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {entries.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                            Tidak ada data transaksi.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        entries.map((e) => (
+                          <TableRow key={e.id} hover>
+                            <TableCell><code>{e.id.substring(0, 8)}...</code></TableCell>
+                            <TableCell sx={{ fontWeight: 600 }}>{e.item_name || '-'}</TableCell>
+                            <TableCell>{e.wallet_name || (e.wallet_id ? `${e.wallet_id.substring(0, 8)}...` : '-')}</TableCell>
+                            <TableCell>{e.created_by_username || '-'}</TableCell>
+                            <TableCell>
+                              <Chip
+                                label={e.type}
+                                size="small"
+                                color={
+                                  e.type === 'titipan'
+                                    ? 'default'
+                                    : e.type === 'topup'
+                                    ? 'info'
+                                    : 'warning'
+                                }
+                              />
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700 }}>
+                              {formatRupiah(e.amount)}
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="caption">
+                                {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Box>
+          )}
+
+          {/* TAB 3: CREATORS */}
+          {tab === 3 && (
+            <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <TableContainer>
+                <Table>
+                  <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700 }}>Pembuat (Creator)</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700 }}>Total Buku</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700 }}>Buku Aktif</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Titipan (Nominal)</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Top-up (Nominal)</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Koreksi</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Total Piutang (Outstanding)</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {creators.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                          Tidak ada data pembuat.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      creators.map((c) => (
+                        <TableRow key={c.creator_id} hover>
+                          <TableCell sx={{ fontWeight: 600 }}>{c.username}</TableCell>
+                          <TableCell align="center">{c.total_wallets}</TableCell>
+                          <TableCell align="center">
+                            <Chip label={c.active_wallets} size="small" color="success" />
+                          </TableCell>
+                          <TableCell align="right">{formatRupiah(c.total_titipan_amount)}</TableCell>
+                          <TableCell align="right">{formatRupiah(Math.abs(c.total_topup_amount))}</TableCell>
+                          <TableCell align="right">{formatRupiah(c.total_koreksi_amount)}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                            {formatRupiah(c.total_outstanding)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+
+          {/* TAB 4: TRENDS */}
           {tab === 4 && (
+            <Box>
+              <Tabs
+                value={trendSubTab}
+                onChange={(_, v) => setTrendSubTab(v)}
+                sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+              >
+                <Tab label="Tren Harian (Daily)" />
+                <Tab label="Tren Mingguan (Weekly)" />
+                <Tab label="Tren Bulanan (Monthly)" />
+              </Tabs>
+
+              {(() => {
+                const currentList =
+                  trendSubTab === 0
+                    ? trends?.daily || []
+                    : trendSubTab === 1
+                    ? trends?.weekly || []
+                    : trends?.monthly || [];
+
+                return (
+                  <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                    <TableContainer>
+                      <Table>
+                        <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 700 }}>Periode (Label)</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>Jumlah Transaksi</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700 }}>Total Perputaran</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {currentList.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={3} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                Belum ada data tren untuk periode ini.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            currentList.map((pt, idx) => (
+                              <TableRow key={idx} hover>
+                                <TableCell sx={{ fontWeight: 600 }}>{pt.label}</TableCell>
+                                <TableCell align="center">{pt.count}</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                                  {formatRupiah(pt.total_amount)}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Paper>
+                );
+              })()}
+            </Box>
+          )}
+
+          {/* TAB 5: AUDIT LOGS */}
+          {tab === 5 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
                 <Table>

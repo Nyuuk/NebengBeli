@@ -38,8 +38,12 @@ export interface Entry {
   created_by: string;
   created_at: string;
   created_by_username?: string;
+  wallet_name?: string;
+  wallet_creator_username?: string;
+  wallet_owner_username?: string;
   running_balance?: number;
   effective_amount?: number;
+  corrections?: Entry[];
   is_offline_pending?: boolean;
   is_offline_failed?: boolean;
   offline_error?: string;
@@ -95,6 +99,8 @@ export interface PendingOfflineEntry {
   wallet_id: string;
   type: EntryType;
   amount: number;
+  target_amount?: number;
+  final_nominal?: number;
   item_name: string;
   note: string;
   corrects_entry_id?: string | null;
@@ -104,6 +110,77 @@ export interface PendingOfflineEntry {
   retry_count: number;
   status?: 'pending' | 'failed';
   error_message?: string;
+}
+
+export interface AdminTrendPoint {
+  label: string;
+  count: number;
+  total_amount: number;
+}
+
+export interface AdminTrends {
+  daily: AdminTrendPoint[];
+  weekly: AdminTrendPoint[];
+  monthly: AdminTrendPoint[];
+}
+
+export interface AdminPeriodSummary {
+  total_titipan_count: number;
+  total_titipan_amount: number;
+  total_topup_count: number;
+  total_topup_amount: number;
+  total_koreksi_count: number;
+  total_koreksi_amount: number;
+  total_count: number;
+  total_volume: number;
+  net_balance: number;
+}
+
+export interface AdminEntriesFilter {
+  limit?: number;
+  offset?: number;
+  page?: number;
+  type?: EntryType;
+  wallet_id?: string;
+  creator_id?: string;
+  user_id?: string;
+  period?: string;
+  range?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface AdminEntriesResponse {
+  entries: Entry[];
+  total: number;
+  summary?: AdminPeriodSummary;
+  page: number;
+  limit: number;
+}
+
+export interface AdminCreatorDetail {
+  creator_id: string;
+  username: string;
+  total_wallets: number;
+  active_wallets: number;
+  archived_wallets: number;
+  total_titipan_count: number;
+  total_titipan_amount: number;
+  total_topup_count: number;
+  total_topup_amount: number;
+  total_koreksi_count: number;
+  total_koreksi_amount: number;
+  total_outstanding: number;
+}
+
+export interface AdminCreatorsResponse {
+  creators: AdminCreatorDetail[];
+  total: number;
+}
+
+export interface AdminSummaryResponse {
+  total_count: number;
+  summary: AdminPeriodSummary;
 }
 
 export interface ItemSuggestion {
