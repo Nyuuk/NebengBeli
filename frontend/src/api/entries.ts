@@ -5,6 +5,8 @@ export interface CreateEntryPayload {
   client_id?: string;
   type: EntryType;
   amount: number;
+  target_amount?: number;
+  final_nominal?: number;
   item_name: string;
   note?: string;
   corrects_entry_id?: string | null;

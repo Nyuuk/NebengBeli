@@ -67,7 +67,9 @@ export async function syncOfflineQueue(
         await createEntryApi(item.wallet_id, {
           client_id: item.client_id,
           type: item.type,
-          amount: item.amount,
+          amount: item.type === 'koreksi' ? (item.target_amount ?? item.final_nominal ?? item.amount) : item.amount,
+          target_amount: item.target_amount,
+          final_nominal: item.final_nominal,
           item_name: item.item_name,
           note: item.note,
           corrects_entry_id: item.corrects_entry_id,
