@@ -9,6 +9,7 @@ import { syncOfflineQueue } from './sync';
 import { getPendingOfflineCount } from './db';
 
 const STORAGE_KEY = 'nebengbeli_e2e_offline';
+export const CAMOFOX_BRIDGE_HOST = '172.17.0.1';
 let memorySimulatedOffline = false;
 
 export function isLoopbackHost(hostname?: string): boolean {
@@ -30,24 +31,24 @@ export function isLocalOrDevEnvironment(): boolean {
     return false;
   }
 
-  // Every activation path is still loopback-gated. A test flag or Vite mode
-  // must never make the seam available on a LAN, staging, or production host.
-  const loopback = isLoopbackHost();
-  if (!loopback) {
+  const hostname = window.location?.hostname?.trim().toLowerCase() ?? '';
+  const loopback = isLoopbackHost(hostname);
+  const bridgeHost = hostname === CAMOFOX_BRIDGE_HOST;
+  if (!loopback && !bridgeHost) {
     return false;
   }
 
-  // Explicit test harness flag
-  if ((window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ === true) {
-    return true;
+  // The bridge is a browser-proxy address, not a trusted local origin by
+  // itself. It is accepted only for an explicit local test invocation.
+  const explicitTestIntent =
+    (window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ === true ||
+    (window as unknown as { __TEST_FORCE_PROD__?: boolean }).__TEST_FORCE_PROD__ === true;
+  if (bridgeHost && !explicitTestIntent) {
+    return false;
   }
 
-  // Allow explicit mock override in test suites
-  if ((window as unknown as { __TEST_FORCE_PROD__?: boolean }).__TEST_FORCE_PROD__ === true) {
-    return true;
-  }
-
-  // Check Vite development mode or test mode
+  // Check Vite development mode or test mode. Loopback remains available for
+  // normal local development; the bridge requires the explicit intent above.
   try {
     const metaEnv = (import.meta as unknown as { env?: { DEV?: boolean; MODE?: string } })?.env;
     if (metaEnv && (metaEnv.DEV || metaEnv.MODE === 'test')) {
@@ -57,7 +58,7 @@ export function isLocalOrDevEnvironment(): boolean {
     // Environment meta may not be present in all runtimes
   }
 
-  return true;
+  return loopback || explicitTestIntent;
 }
 
 export function isSimulatedOffline(): boolean {

@@ -63,16 +63,37 @@ describe('Deterministic Bundle/Build-level E2E Offline Seam Regression Suite', (
     expect(typeof localE2E?.getPendingCount).toBe('function');
     expect(typeof localE2E?.resetOfflineState).toBe('function');
 
-    // Test 2: Evaluate bundle on non-localhost production domain (e.g. nebengbeli.nyuuk.my.id)
-    const prodDom = new JSDOM('<!DOCTYPE html><html><body><div id="root"></div></body></html>', {
-      url: 'https://nebengbeli.nyuuk.my.id/',
+    // Test 2: the known Camofox bridge is enabled only with explicit local test intent.
+    const bridgeDom = new JSDOM('<!DOCTYPE html><html><body><div id="root"></div></body></html>', {
+      url: 'http://172.17.0.1:8088/',
       runScripts: 'dangerously',
     });
+    (bridgeDom.window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ = true;
+    bridgeDom.window.eval(evalCode);
+    expect(bridgeDom.window.__NEBENGBELI_E2E__).toBeDefined();
 
-    prodDom.window.eval(evalCode);
-    const prodE2E = prodDom.window.__NEBENGBELI_E2E__;
+    const bridgeWithoutIntentDom = new JSDOM('<!DOCTYPE html><html><body><div id="root"></div></body></html>', {
+      url: 'http://172.17.0.1:8088/',
+      runScripts: 'dangerously',
+    });
+    bridgeWithoutIntentDom.window.eval(evalCode);
+    expect(bridgeWithoutIntentDom.window.__NEBENGBELI_E2E__).toBeUndefined();
 
-    // Must be completely undefined and inert in production
-    expect(prodE2E).toBeUndefined();
+    // Test 3: production, staging, and arbitrary private hosts remain inert.
+    for (const url of [
+      'https://nebengbeli.nyuuk.my.id/',
+      'https://staging.nebengbeli.internal/',
+      'http://192.168.1.100:8088/',
+      'http://10.0.0.1:8088/',
+      'http://172.17.0.2:8088/',
+    ]) {
+      const restrictedDom = new JSDOM('<!DOCTYPE html><html><body><div id="root"></div></body></html>', {
+        url,
+        runScripts: 'dangerously',
+      });
+      (restrictedDom.window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ = true;
+      restrictedDom.window.eval(evalCode);
+      expect(restrictedDom.window.__NEBENGBELI_E2E__).toBeUndefined();
+    }
   }, 30000);
 });

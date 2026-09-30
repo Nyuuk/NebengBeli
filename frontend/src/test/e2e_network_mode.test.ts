@@ -132,21 +132,43 @@ describe('Local-Only E2E Offline Network-Mode Control Seam', () => {
         expect((window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__).toBeDefined();
       }
 
+      // The exact Camofox bridge requires explicit local test intent.
+      Object.defineProperty(window, 'location', {
+        value: { hostname: '172.17.0.1' },
+        writable: true,
+      });
+      delete (window as unknown as { __TEST_FORCE_PROD__?: boolean }).__TEST_FORCE_PROD__;
+      delete (window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__;
+      expect(isLocalOrDevEnvironment()).toBe(false);
+      initOfflineNetworkSeam();
+      expect((window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__).toBeUndefined();
+
+      (window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ = true;
+      expect(isLocalOrDevEnvironment()).toBe(true);
+      initOfflineNetworkSeam();
+      expect((window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__).toBeDefined();
+
       // Test non-localhost / production / LAN addresses
       const nonLocalHosts = [
         'nebengbeli.nyuuk.my.id',
         'staging.nebengbeli.internal',
         '192.168.1.100',
         '10.0.0.1',
-        '172.17.0.1',
+        '172.17.0.2',
         'app.local',
       ];
+      delete (window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__;
 
       for (const host of nonLocalHosts) {
         Object.defineProperty(window, 'location', {
           value: { hostname: host },
           writable: true,
         });
+
+        // Even with explicit test intent flag set, non-local and non-bridge hosts remain strictly disabled
+        (window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ = true;
+        expect(isLocalOrDevEnvironment()).toBe(false);
+        delete (window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__;
 
         expect(isLocalOrDevEnvironment()).toBe(false);
 
