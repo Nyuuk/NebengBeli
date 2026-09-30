@@ -24,6 +24,7 @@ Usage:
   cli <command> [arguments]
 
 Available Commands:
+  migrate                  Run database schema migrations (idempotent, non-serving)
   create-admin             Create or promote a user to admin
   users                    List all registered users and token versions
   reset-password           Reset a user password and revoke existing sessions
@@ -59,6 +60,11 @@ func main() {
 	}
 
 	command := os.Args[1]
+	if command == "-h" || command == "--help" || command == "help" {
+		printUsage()
+		os.Exit(0)
+	}
+
 	cfg := config.LoadConfig()
 
 	db, err := database.Connect(cfg.DatabaseURL)
@@ -76,6 +82,13 @@ func main() {
 	auditRepo := repository.NewAuditRepository(db)
 
 	switch command {
+	case "migrate":
+		log.Println("Executing database migrations...")
+		if err := database.RunMigrations(db); err != nil {
+			log.Fatalf("Database migration failed: %v", err)
+		}
+		log.Println("Database migration completed successfully.")
+
 	case "create-admin":
 		fs := flag.NewFlagSet("create-admin", flag.ExitOnError)
 		username := fs.String("username", "", "Admin username")
