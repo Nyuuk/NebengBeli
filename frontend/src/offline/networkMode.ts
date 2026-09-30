@@ -11,9 +11,40 @@ import { getPendingOfflineCount } from './db';
 const STORAGE_KEY = 'nebengbeli_e2e_offline';
 let memorySimulatedOffline = false;
 
+export function isLoopbackHost(hostname?: string): boolean {
+  const host = (hostname ?? (typeof window !== 'undefined' ? window.location?.hostname : '') ?? '')
+    .trim()
+    .toLowerCase();
+  if (!host) return false;
+
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host === '[::1]'
+  );
+}
+
 export function isLocalOrDevEnvironment(): boolean {
   if (typeof window === 'undefined') {
     return false;
+  }
+
+  // Every activation path is still loopback-gated. A test flag or Vite mode
+  // must never make the seam available on a LAN, staging, or production host.
+  const loopback = isLoopbackHost();
+  if (!loopback) {
+    return false;
+  }
+
+  // Explicit test harness flag
+  if ((window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ === true) {
+    return true;
+  }
+
+  // Allow explicit mock override in test suites
+  if ((window as unknown as { __TEST_FORCE_PROD__?: boolean }).__TEST_FORCE_PROD__ === true) {
+    return true;
   }
 
   // Check Vite development mode or test mode
@@ -26,26 +57,7 @@ export function isLocalOrDevEnvironment(): boolean {
     // Environment meta may not be present in all runtimes
   }
 
-  // Explicit test harness flag
-  if ((window as unknown as { __E2E_MODE__?: boolean }).__E2E_MODE__ === true) {
-    return true;
-  }
-
-  const host = window.location.hostname;
-  if (!host) return false;
-
-  // Local, loopback, and private container bridge network addresses
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host.endsWith('.local') ||
-    host.startsWith('172.17.') ||
-    host.startsWith('172.18.') ||
-    host.startsWith('172.19.') ||
-    host.startsWith('172.20.') ||
-    host.startsWith('192.168.') ||
-    host.startsWith('10.')
-  );
+  return true;
 }
 
 export function isSimulatedOffline(): boolean {
@@ -98,14 +110,34 @@ export function isAppOnline(): boolean {
   return typeof navigator !== 'undefined' ? navigator.onLine : true;
 }
 
-// Attach local test window interface for browser automation scripts (Camofox, Playwright, etc.)
-if (typeof window !== 'undefined' && isLocalOrDevEnvironment()) {
-  (window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__ = {
-    setOffline: (offline: boolean) => setSimulatedOffline(offline),
-    isOffline: () => !isAppOnline(),
-    isSimulatedOffline: () => isSimulatedOffline(),
-    syncNow: () => syncOfflineQueue(),
-    getPendingCount: () => getPendingOfflineCount(),
-    resetOfflineState: () => setSimulatedOffline(false),
-  };
+/**
+ * Attaches the local E2E offline control seam to window in local/development environments.
+ * Ensures the seam is inert and unattached in non-localhost and production environments.
+ */
+export function initOfflineNetworkSeam(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (isLocalOrDevEnvironment()) {
+    (window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__ = {
+      setOffline: (offline: boolean) => setSimulatedOffline(offline),
+      isOffline: () => !isAppOnline(),
+      isSimulatedOffline: () => isSimulatedOffline(),
+      syncNow: () => syncOfflineQueue(),
+      getPendingCount: () => getPendingOfflineCount(),
+      resetOfflineState: () => setSimulatedOffline(false),
+    };
+  } else {
+    try {
+      delete (window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__;
+    } catch {
+      (window as unknown as { __NEBENGBELI_E2E__?: unknown }).__NEBENGBELI_E2E__ = undefined;
+    }
+  }
+}
+
+// Auto-initialize on module load if in browser
+if (typeof window !== 'undefined') {
+  initOfflineNetworkSeam();
 }

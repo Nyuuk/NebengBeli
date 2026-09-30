@@ -8,6 +8,18 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+# Endpoint resolution:
+# Explicit safe configurable local HTTP API default (http://localhost:8080).
+# Optional HTTPS is only used when explicitly requested (e.g. API_URL=https://... or USE_HTTPS=true).
+API_URL="${API_URL:-${DEV_API_URL:-${NEBENGBELI_API_URL:-}}}"
+if [[ -z "${API_URL}" ]]; then
+    if [[ "${USE_HTTPS:-false}" == "true" || "${E2E_USE_HTTPS:-false}" == "true" ]]; then
+        API_URL="https://localhost:8443"
+    else
+        API_URL="http://localhost:8080"
+    fi
+fi
+
 ACTION="${1:-help}"
 
 case "${ACTION}" in
@@ -16,7 +28,7 @@ case "${ACTION}" in
         PASSWORD="${3:-}"
 
         if [[ -z "${PASSWORD}" ]]; then
-            # Generate a strong ephemeral password if not provided
+            # Generate a strong ephemeral password if not provided (never print secret)
             PASSWORD=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 16)
             echo "[fixtures] Creating admin '${USERNAME}' with generated credentials..."
         else
@@ -32,8 +44,8 @@ case "${ACTION}" in
     seed)
         SCENARIO="${2:-standard}"
         PASSWORD="${3:-TestPassword123!}"
-        echo "[fixtures] Seeding test fixtures (scenario: ${SCENARIO})..."
-        RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/dev/fixtures/seed \
+        echo "[fixtures] Seeding test fixtures (scenario: ${SCENARIO}) via ${API_URL}..."
+        RESPONSE=$(curl -sS -X POST "${API_URL}/api/dev/fixtures/seed" \
             -H "Content-Type: application/json" \
             -d "{\"scenario\":\"${SCENARIO}\",\"password\":\"${PASSWORD}\"}")
         
@@ -41,8 +53,8 @@ case "${ACTION}" in
         ;;
 
     reset)
-        echo "[fixtures] Resetting test database tables..."
-        RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/dev/fixtures/reset \
+        echo "[fixtures] Resetting test database tables via ${API_URL}..."
+        RESPONSE=$(curl -s -k -X POST "${API_URL}/api/dev/fixtures/reset" \
             -H "Content-Type: application/json" \
             -d "{}")
         
@@ -50,8 +62,8 @@ case "${ACTION}" in
         ;;
 
     status)
-        echo "[fixtures] Checking developer endpoints status..."
-        STATUS_RESP=$(curl -s -k https://localhost:8443/api/dev/status || echo '{"enabled":false}')
+        echo "[fixtures] Checking developer endpoints status via ${API_URL}..."
+        STATUS_RESP=$(curl -s -k "${API_URL}/api/dev/status" || echo '{"enabled":false}')
         echo "[fixtures] Status: ${STATUS_RESP}"
         echo ""
         echo "[fixtures] Database Stats:"
@@ -64,7 +76,7 @@ case "${ACTION}" in
         ;;
 
     *)
-        echo "Usage: $0 <command> [arguments]"
+        echo "Usage: [API_URL=http://localhost:8080] [USE_HTTPS=true] $0 <command> [arguments]"
         echo ""
         echo "Commands:"
         echo "  create-admin [username] [password]                 Create or update an admin user"
@@ -72,6 +84,10 @@ case "${ACTION}" in
         echo "  reset                                              Wipe fixture data safely in dev mode"
         echo "  status                                             Check dev endpoint and platform statistics"
         echo "  list-users                                         List users and token versions via CLI"
+        echo ""
+        echo "Environment Variables:"
+        echo "  API_URL      Backend endpoint (default: http://localhost:8080)"
+        echo "  USE_HTTPS    Set to 'true' to use https://localhost:8443 if API_URL is unset"
         exit 1
         ;;
 esac
