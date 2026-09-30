@@ -370,11 +370,34 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                         freeSolo
                         options={suggestions}
                         getOptionLabel={(opt) => (typeof opt === 'string' ? opt : opt.item_name)}
+                        isOptionEqualToValue={(option, value) => {
+                          if (typeof value === 'string') {
+                            return option.item_name === value;
+                          }
+                          return option.item_name === value?.item_name;
+                        }}
                         value={row.item_name}
-                        onInputChange={(_, val) => handleRowChange(idx, 'item_name', val)}
+                        onInputChange={(_, val, reason) => {
+                          if (reason === 'input') {
+                            handleRowChange(idx, 'item_name', val);
+                          } else if (reason === 'clear') {
+                            handleRowChange(idx, 'item_name', '');
+                          }
+                        }}
                         onChange={(_, val) => {
-                          if (typeof val === 'object' && val) {
+                          if (typeof val === 'object' && val !== null) {
                             handleSuggestionSelect(idx, val);
+                          } else if (typeof val === 'string') {
+                            const matched = suggestions.find(
+                              (s) => s.item_name.toLowerCase() === val.trim().toLowerCase()
+                            );
+                            if (matched) {
+                              handleSuggestionSelect(idx, matched);
+                            } else {
+                              handleRowChange(idx, 'item_name', val);
+                            }
+                          } else if (val === null) {
+                            handleRowChange(idx, 'item_name', '');
                           }
                         }}
                         renderOption={(props, option) => (

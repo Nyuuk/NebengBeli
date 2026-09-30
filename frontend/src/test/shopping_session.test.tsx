@@ -9,7 +9,8 @@ import {
   resetDBInstance,
 } from '../offline/db';
 import * as entriesApi from '../api/entries';
-import { Wallet } from '../types';
+import * as walletsApi from '../api/wallets';
+import { Wallet, ItemSuggestion } from '../types';
 
 describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
   const mockWallets: Wallet[] = [
@@ -283,5 +284,224 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
       expect(handleSuccess).toHaveBeenCalledWith(2, false);
       expect(handleClose).toHaveBeenCalled();
     });
+  });
+
+  it('reliably sets item_name and amount from last_price when selecting an item suggestion', async () => {
+    const mockSuggestions: ItemSuggestion[] = [
+      { item_name: 'Es Kopi Susu Aren', last_price: 18000, frequency: 5 },
+      { item_name: 'Roti Panggang Keju', last_price: 15000, frequency: 3 },
+    ];
+    vi.spyOn(walletsApi, 'getItemSuggestionsApi').mockResolvedValue(mockSuggestions);
+
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockResolvedValue({
+      entries: [],
+      count: 1,
+    });
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Select wallet on row 1
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    // Wait for suggestions to load
+    await waitFor(() => {
+      expect(walletsApi.getItemSuggestionsApi).toHaveBeenCalledWith('w-1');
+    });
+
+    // Select item suggestion on row 1
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.focus(itemInput1);
+    fireEvent.keyDown(itemInput1, { key: 'ArrowDown' }); // opens dropdown
+    const option = await screen.findByText('Es Kopi Susu Aren');
+    fireEvent.click(option);
+
+    // Verify item_name and amount are populated from suggestion
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' }) as HTMLInputElement;
+    expect((itemInput1 as HTMLInputElement).value).toBe('Es Kopi Susu Aren');
+    expect(amountInput1.value).toBe('18000');
+
+    // Verify row 2 is empty/unfilled and total is calculated from row 1
+    expect(screen.getByText('Simpan Semua (1 Titipan - Rp 18.000)')).toBeDefined();
+
+    // Submit batch
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(batchSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            wallet_id: 'w-1',
+            item_name: 'Es Kopi Susu Aren',
+            amount: 18000,
+          }),
+        ])
+      );
+      expect(handleSuccess).toHaveBeenCalledWith(1, false);
+      expect(handleClose).toHaveBeenCalled();
+    });
+  });
+
+  it('reliably sets item_name and amount despite MUI onInputChange ordering (reset before/after onChange)', async () => {
+    const mockSuggestions: ItemSuggestion[] = [
+      { item_name: 'Matcha Latte', last_price: 22000, frequency: 2 },
+    ];
+    vi.spyOn(walletsApi, 'getItemSuggestionsApi').mockResolvedValue(mockSuggestions);
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={() => {}}
+          onSuccess={() => {}}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Select wallet on row 1
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(walletsApi.getItemSuggestionsApi).toHaveBeenCalledWith('w-1');
+    });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' }) as HTMLInputElement;
+
+    // Simulate typing text that matches suggestion and pressing enter
+    fireEvent.focus(itemInput1);
+    fireEvent.change(itemInput1, { target: { value: 'Matcha Latte' } });
+    fireEvent.keyDown(itemInput1, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect((itemInput1 as HTMLInputElement).value).toBe('Matcha Latte');
+      expect(amountInput1.value).toBe('22000');
+    });
+  });
+
+  it('preserves freeSolo typed custom text and custom amount without suggestion matching', async () => {
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={() => {}}
+          onSuccess={() => {}}
+        />
+      </OnlineStatusProvider>
+    );
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' }) as HTMLInputElement;
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' }) as HTMLInputElement;
+
+    fireEvent.change(itemInput1, { target: { value: 'Martabak Manis Spesial' } });
+    fireEvent.change(amountInput1, { target: { value: '45000' } });
+
+    expect(itemInput1.value).toBe('Martabak Manis Spesial');
+    expect(amountInput1.value).toBe('45000');
+  });
+
+  it('allows user to manually override amount after selecting an item suggestion', async () => {
+    const mockSuggestions: ItemSuggestion[] = [
+      { item_name: 'Es Kopi Susu Aren', last_price: 18000, frequency: 4 },
+    ];
+    vi.spyOn(walletsApi, 'getItemSuggestionsApi').mockResolvedValue(mockSuggestions);
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={() => {}}
+          onSuccess={() => {}}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Select wallet
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(walletsApi.getItemSuggestionsApi).toHaveBeenCalledWith('w-1');
+    });
+
+    // Select suggestion
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.focus(itemInput1);
+    fireEvent.keyDown(itemInput1, { key: 'ArrowDown' });
+    const option = await screen.findByText('Es Kopi Susu Aren');
+    fireEvent.click(option);
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' }) as HTMLInputElement;
+    expect(amountInput1.value).toBe('18000');
+
+    // Override amount manually
+    fireEvent.change(amountInput1, { target: { value: '20000' } });
+    expect(amountInput1.value).toBe('20000');
+    expect(screen.getByText('Simpan Semua (1 Titipan - Rp 20.000)')).toBeDefined();
+  });
+
+  it('handles item suggestion with last_price = 0 without setting amount to 0 string', async () => {
+    const mockSuggestions: ItemSuggestion[] = [
+      { item_name: 'Barang Tanpa Harga', last_price: 0, frequency: 1 },
+    ];
+    vi.spyOn(walletsApi, 'getItemSuggestionsApi').mockResolvedValue(mockSuggestions);
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={() => {}}
+          onSuccess={() => {}}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Select wallet
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(walletsApi.getItemSuggestionsApi).toHaveBeenCalledWith('w-1');
+    });
+
+    // Select suggestion
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.focus(itemInput1);
+    fireEvent.keyDown(itemInput1, { key: 'ArrowDown' });
+    const option = await screen.findByText('Barang Tanpa Harga');
+    fireEvent.click(option);
+
+    expect((itemInput1 as HTMLInputElement).value).toBe('Barang Tanpa Harga');
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' }) as HTMLInputElement;
+    expect(amountInput1.value).toBe('');
   });
 });
