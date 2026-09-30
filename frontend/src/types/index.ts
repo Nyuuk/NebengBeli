@@ -245,16 +245,16 @@ export interface ShoppingSessionDraft {
 
 export type RecapPeriod = 'today' | 'this_week' | 'this_month' | 'custom';
 
-export interface AdminTrendPoint {
+export interface LegacyAdminTrendPoint {
   period_label: string;
   count: number;
   volume: number;
 }
 
 export interface AdminTrendsData {
-  daily_trends: AdminTrendPoint[];
-  weekly_trends: AdminTrendPoint[];
-  monthly_trends: AdminTrendPoint[];
+  daily_trends: LegacyAdminTrendPoint[];
+  weekly_trends: LegacyAdminTrendPoint[];
+  monthly_trends: LegacyAdminTrendPoint[];
 }
 
 export interface AdminCreatorBreakdownItem {
