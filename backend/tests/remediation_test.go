@@ -975,6 +975,21 @@ func TestNginxConfigurationHasSecurityAndPWAHeaders(t *testing.T) {
 	if !strings.Contains(nginxStr, "client_body_temp_path /tmp/client_temp;") {
 		t.Errorf("nginx.conf missing client_body_temp_path in /tmp")
 	}
+	if !strings.Contains(nginxStr, "try_files $uri $uri/ /index.html;") {
+		t.Errorf("nginx.conf missing SPA fallback 'try_files $uri $uri/ /index.html;'")
+	}
+	if !strings.Contains(nginxStr, "location = /healthz") && !strings.Contains(nginxStr, "location /healthz") {
+		t.Errorf("nginx.conf missing frontend health endpoint location")
+	}
+	if strings.Contains(nginxStr, "proxy_pass") {
+		t.Errorf("nginx.conf must be static-only and must not contain backend proxy_pass directives")
+	}
+	if strings.Contains(nginxStr, "location /api/") {
+		t.Errorf("nginx.conf must not contain obsolete backend proxy location /api/")
+	}
+	if strings.Contains(nginxStr, "location /readyz") {
+		t.Errorf("nginx.conf must not contain obsolete backend proxy location /readyz")
+	}
 }
 
 func TestFrontendDockerfileUnprivilegedNonRootSafety(t *testing.T) {
