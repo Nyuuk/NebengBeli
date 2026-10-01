@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getCreatorInsightsApi, getWalletsApi, getItemSuggestionsApi, unlinkWalletApi } from '../api/wallets';
+import { getCreatorInsightsApi } from '../api/wallets';
 import * as client from '../api/client';
 
 describe('Wallets API Adapters and Insights Normalization Suite', () => {
