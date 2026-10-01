@@ -61,5 +61,18 @@ e2e-cleanup:
 e2e-test:
 	./scripts/e2e-runner.sh
 
+# Playwright Chromium E2E targets
+test-e2e:
+	cd playwright && npm test
+
+e2e-install:
+	cd playwright && npm install
+
+e2e-report:
+	cd playwright && npm run report
+
+e2e-ui:
+	cd playwright && npm run test:ui
+
 clean:
-	rm -rf backend/bin frontend/dist frontend/node_modules certs
+	rm -rf backend/bin frontend/dist frontend/node_modules certs playwright/node_modules playwright/test-results playwright/playwright-report

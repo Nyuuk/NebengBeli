@@ -45,13 +45,18 @@ else
     echo "[setup] Using existing .env configuration."
 fi
 
+COMPOSE_ARGS=("-f" "docker-compose.yml")
+if [[ -f "${ROOT_DIR}/docker-compose.e2e.yml" ]]; then
+    COMPOSE_ARGS+=("-f" "docker-compose.e2e.yml")
+fi
+
 # 3. Validate compose configuration
 echo "[setup] Validating Docker Compose configuration..."
-docker compose config --quiet
+docker compose "${COMPOSE_ARGS[@]}" config --quiet
 
 # 4. Build and start containers
 echo "[setup] Building and launching Docker Compose stack..."
-docker compose up --build -d
+docker compose "${COMPOSE_ARGS[@]}" up --build -d
 
 # 5. Wait for readiness
 echo "[setup] Waiting for backend and database readiness..."

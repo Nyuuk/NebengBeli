@@ -200,6 +200,30 @@ go run ./backend/cmd/cli/main.go inspect-wallet --id <wallet_uuid>
 
 ---
 
+## Playwright Chromium E2E Testing
+
+NebengBeli includes a standalone, Chromium-only Playwright test suite under `playwright/` providing a verified 29-test regression baseline covering core workflows across F1–F11, ledger rules, security, and offline sync:
+
+```bash
+# 1. Install Playwright test runner & dependencies
+make e2e-install
+# Or: cd playwright && npm install
+
+# 2. Run complete Chromium E2E test suite
+make test-e2e
+# Or: cd playwright && npm test
+
+# 3. View interactive test report
+make e2e-report
+
+# 4. Run in UI mode
+make e2e-ui
+```
+
+See [`playwright/README.md`](playwright/README.md) and [`playwright/PRD-TRACEABILITY.md`](playwright/PRD-TRACEABILITY.md) for traceability baseline and usage guide. Known uncovered PRD edge cases (F7/F8/F11/atomic rollback chaos) are documented in the traceability matrix.
+
+---
+
 ## License
 
 MIT License

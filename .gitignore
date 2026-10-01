@@ -39,4 +39,9 @@ test-results/smoke-*.log
 
 .worktrees/
 
+# Playwright
+playwright/node_modules/
+playwright/playwright-report/
+playwright/test-results/
+
 

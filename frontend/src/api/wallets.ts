@@ -71,11 +71,28 @@ export async function unlinkWalletApi(walletId: string): Promise<{ message: stri
 }
 
 export async function getCreatorInsightsApi(): Promise<CreatorInsights> {
+  let raw: any;
   try {
-    const data = await request<CreatorInsights>('/api/insights');
-    return data;
+    raw = await request<any>('/api/insights');
   } catch {
-    const data = await request<CreatorInsights>('/api/wallets/insights');
-    return data;
+    raw = await request<any>('/api/wallets/insights');
   }
+  return {
+    total_money_outside: raw.total_money_outside ?? raw.total_outstanding ?? 0,
+    active_wallets_count: raw.active_wallets_count ?? raw.total_active_wallets ?? (raw.wallets ? raw.wallets.filter((w: any) => !w.is_archived).length : 0),
+    total_wallets_count: raw.total_wallets_count ?? (raw.total_active_wallets != null ? raw.total_active_wallets + (raw.total_archived_wallets || 0) : 0),
+    total_titipan_volume: raw.total_titipan_volume ?? 0,
+    total_titipan_count: raw.total_titipan_count ?? 0,
+    daily_trends: raw.daily_trends || (raw.trends?.daily?.map((d: any) => ({ date: d.period || d.label || '', count: d.count || 0, volume: d.amount ?? d.total_amount ?? 0 })) || []),
+    weekly_trends: raw.weekly_trends || (raw.trends?.weekly?.map((d: any) => ({ week: d.period || d.label || '', count: d.count || 0, volume: d.amount ?? d.total_amount ?? 0 })) || []),
+    monthly_trends: raw.monthly_trends || (raw.trends?.monthly?.map((d: any) => ({ month: d.period || d.label || '', count: d.count || 0, volume: d.amount ?? d.total_amount ?? 0 })) || []),
+    wallet_balances: raw.wallet_balances || (raw.wallets?.map((w: any) => ({
+      wallet_id: w.id,
+      wallet_name: w.name,
+      balance: w.balance || 0,
+      owner_username: w.owner_username,
+      is_archived: !!w.is_archived,
+    })) || []),
+    cached_at: raw.cached_at,
+  };
 }
