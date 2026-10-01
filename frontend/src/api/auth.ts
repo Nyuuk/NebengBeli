@@ -47,10 +47,5 @@ export async function resetPasswordApi(newPassword: string): Promise<{ message: 
 }
 
 export async function renewAuthTokenApi(): Promise<{ message?: string; user?: User; token?: string; expires_at?: string }> {
-  try {
-    return await request('/api/auth/renew', { method: 'POST' });
-  } catch (err) {
-    // Fallback to /auth/renew if mapped at root
-    return await request('/auth/renew', { method: 'POST' });
-  }
+  return request('/api/auth/renew', { method: 'POST' });
 }

@@ -18,7 +18,7 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
 - **F8: Complete Audit Logging**: Comprehensive audit trail recording `actor_id`, `action`, `target_type`, `target_id`, `metadata`, and `created_at`.
 - **F9: Admin CLI & Operations**: Standalone CLI tool (`cmd/cli`) to create/promote admin accounts (`create-admin --username`), list users, reset passwords, revoke sessions, inspect wallets, and view stats.
 - **F10: Offline-First PWA & IndexedDB Queue**: Installable PWA with Service Worker and IndexedDB offline queue; auto-syncs pending transactions when network reconnects.
-- **F11: Production DevOps & Health Checks**: `/healthz` and `/readyz` probes, multi-stage Dockerfiles with unprivileged non-root frontend container runtime (Kubernetes restrictive security safe with read-only root filesystem and dropped capabilities), Docker Compose with Nginx reverse proxy, and Makefile.
+- **F11: Production DevOps & Health Checks**: `/healthz` and `/readyz` probes, multi-stage Dockerfiles with unprivileged non-root frontend container runtime (Kubernetes restrictive security safe with read-only root filesystem and dropped capabilities), Docker Compose with unprivileged Nginx static SPA server, and Makefile.
 
 ---
 
@@ -27,7 +27,7 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
 - **Backend**: Go 1.19+, Gin, PostgreSQL (`github.com/lib/pq`), `golang-jwt/jwt/v5`, `golang.org/x/crypto`, `golang.org/x/time`
 - **Frontend**: React 18, TypeScript, Material UI (MUI v5), React Router v7, `idb` (IndexedDB), Vite 6, PWA Service Worker
 - **Database**: PostgreSQL 15+ (strictly 5 core tables with immutability triggers)
-- **Deployment**: Kubernetes (restricted security standard) & Docker Compose with unprivileged Nginx reverse proxy
+- **Deployment**: Kubernetes (restricted security standard) & Docker Compose with unprivileged Nginx static SPA server
 
 ---
 

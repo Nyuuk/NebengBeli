@@ -37,3 +37,6 @@ postgres_data/
 test-results/local-*.log
 test-results/smoke-*.log
 
+.worktrees/
+
+
