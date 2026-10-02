@@ -13,6 +13,8 @@ import {
   IconButton,
   Tooltip,
   Pagination,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
@@ -50,6 +52,8 @@ export const StatementView: React.FC<StatementViewProps> = ({
   onRetryFailedEntry,
   isArchivedWallet,
 }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const safeEntries = entries || [];
   const totalPages = Math.ceil((totalCount || 0) / (pageSize || 25)) || 1;
 
@@ -118,6 +122,195 @@ export const StatementView: React.FC<StatementViewProps> = ({
     }
   };
 
+  const renderActions = (e: Entry & { has_corrections?: boolean }) => {
+    const isCorrectionType = e.type === 'koreksi';
+    const isActionDisabled = Boolean(e.is_offline_pending || isCorrectionType || isArchivedWallet);
+
+    if (e.is_offline_failed) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+          <Tooltip title="Coba Sinkronkan Ulang">
+            <IconButton size="small" color="primary" onClick={() => onRetryFailedEntry?.(e)}>
+              <ReplayIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Pindahkan ke Buku Lain">
+            <IconButton size="small" color="warning" onClick={() => onMoveFailedEntry?.(e)}>
+              <SwapHorizIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Buang / Hapus Entri Gagal">
+            <IconButton size="small" color="error" onClick={() => onDiscardFailedEntry?.(e)}>
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      );
+    }
+
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+        <Tooltip
+          title={
+            isCorrectionType
+              ? 'Entri koreksi tidak dapat dikoreksi ulang'
+              : e.is_offline_pending
+              ? 'Tunggu sinkronisasi selesai'
+              : 'Koreksi Entri'
+          }
+        >
+          <span>
+            <IconButton size="small" disabled={isActionDisabled} onClick={() => onCorrectEntry(e)}>
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip
+          title={
+            isCorrectionType
+              ? 'Entri koreksi tidak dapat dipindah'
+              : e.is_offline_pending
+              ? 'Tunggu sinkronisasi selesai'
+              : 'Pindah ke Buku Lain'
+          }
+        >
+          <span>
+            <IconButton size="small" disabled={isActionDisabled} onClick={() => onMoveEntry(e)}>
+              <SwapHorizIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
+    );
+  };
+  const renderAmount = (e: Entry & { effective_amount?: number; has_corrections?: boolean }) => {
+    const isCorrected = Boolean(e.has_corrections);
+    if (isCorrected) {
+      return (
+        <Box>
+          <Typography
+            variant="caption"
+            sx={{ textDecoration: 'line-through', color: 'text.secondary', display: 'block' }}
+          >
+            {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ fontWeight: 700, color: (e.effective_amount || 0) < 0 ? '#d32f2f' : '#2e7d32' }}
+          >
+            {(e.effective_amount || 0) > 0
+              ? `+${formatRupiah(e.effective_amount || 0)}`
+              : formatRupiah(e.effective_amount || 0)}
+          </Typography>
+        </Box>
+      );
+    }
+    return (
+      <Typography variant="body2" sx={{ fontWeight: 700, color: e.amount < 0 ? '#d32f2f' : '#2e7d32' }}>
+        {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
+      </Typography>
+    );
+  };
+
+  if (isMobile) {
+    return (
+      <Paper elevation={1} sx={{ borderRadius: 2 }}>
+        {entriesWithEffective.length === 0 ? (
+          <Box sx={{ py: 4, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              Belum ada transaksi di buku ledger ini.
+            </Typography>
+          </Box>
+        ) : (
+          <Box sx={{ p: 1.5 }}>
+            {entriesWithEffective.map((e) => (
+              <Paper
+                key={e.id}
+                variant="outlined"
+                sx={{
+                  p: 1.5,
+                  mb: 1.5,
+                  borderRadius: 2,
+                  bgcolor: e.is_offline_failed ? '#fff5f5' : 'inherit',
+                  opacity: e.is_offline_pending ? 0.75 : 1,
+                  '&:last-of-type': { mb: 0 },
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                  {getTypeChip(e)}
+                  <Box sx={{ textAlign: 'right' }}>{renderAmount(e)}</Box>
+                </Box>
+
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {e.item_name}
+                </Typography>
+                {e.note && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {e.note}
+                  </Typography>
+                )}
+                {e.corrects_entry_id && (
+                  <Typography variant="caption" color="warning.main" display="block">
+                    Koreksi entri: {e.corrects_entry_id.substring(0, 8)}... {e.correction_reason ? `(${e.correction_reason})` : ''}
+                  </Typography>
+                )}
+                {Boolean(e.has_corrections) && (
+                  <Chip
+                    label={`Ada ${e.corrections_count} koreksi`}
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
+                  />
+                )}
+                {e.offline_error && (
+                  <Typography variant="caption" color="error" display="block" sx={{ fontWeight: 600 }}>
+                    Alasan Ditolak: {e.offline_error}
+                  </Typography>
+                )}
+
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    mt: 1,
+                    pt: 1,
+                    borderTop: '1px solid #eee',
+                  }}
+                >
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {' · '}
+                      {e.created_by_username || 'System'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Saldo: {e.running_balance !== undefined ? formatRupiah(e.running_balance) : '-'}
+                    </Typography>
+                  </Box>
+                  {!isArchivedWallet && renderActions(e)}
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+        )}
+
+        {totalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+            <Pagination count={totalPages} page={page} onChange={(_, val) => onPageChange(val)} color="primary" size="small" />
+          </Box>
+        )}
+      </Paper>
+    );
+  }
+
   return (
     <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
       <TableContainer>
@@ -145,189 +338,72 @@ export const StatementView: React.FC<StatementViewProps> = ({
                 </TableCell>
               </TableRow>
             ) : (
-              entriesWithEffective.map((e) => {
-                const isCorrected = Boolean(e.has_corrections);
-                const isCorrectionType = e.type === 'koreksi';
-                const isActionDisabled = Boolean(e.is_offline_pending || isCorrectionType || isArchivedWallet);
-
-                return (
-                  <TableRow
-                    key={e.id}
-                    hover
-                    sx={{
-                      bgcolor: e.is_offline_failed ? '#fff5f5' : 'inherit',
-                      opacity: e.is_offline_pending ? 0.75 : 1,
-                    }}
-                  >
-                    <TableCell>
-                      <Typography variant="body2">
-                        {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+              entriesWithEffective.map((e) => (
+                <TableRow
+                  key={e.id}
+                  hover
+                  sx={{
+                    bgcolor: e.is_offline_failed ? '#fff5f5' : 'inherit',
+                    opacity: e.is_offline_pending ? 0.75 : 1,
+                  }}
+                >
+                  <TableCell>
+                    <Typography variant="body2">
+                      {new Date(e.occurred_at || e.created_at).toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    {getTypeChip(e)}
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {e.item_name}
+                    </Typography>
+                    {e.note && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {e.note}
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {getTypeChip(e)}
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {e.item_name}
-                      </Typography>
-                      {e.note && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          {e.note}
-                        </Typography>
-                      )}
-                      {e.corrects_entry_id && (
-                        <Typography variant="caption" color="warning.main" display="block">
-                          Koreksi entri: {e.corrects_entry_id.substring(0, 8)}... {e.correction_reason ? `(${e.correction_reason})` : ''}
-                        </Typography>
-                      )}
-                      {isCorrected && (
-                        <Chip
-                          label={`Ada ${e.corrections_count} koreksi`}
-                          size="small"
-                          color="warning"
-                          variant="outlined"
-                          sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
-                        />
-                      )}
-                      {e.offline_error && (
-                        <Typography variant="caption" color="error" display="block" sx={{ fontWeight: 600 }}>
-                          Alasan Ditolak: {e.offline_error}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      {isCorrected ? (
-                        <Box>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              textDecoration: 'line-through',
-                              color: 'text.secondary',
-                              display: 'block',
-                            }}
-                          >
-                            {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              fontWeight: 700,
-                              color: (e.effective_amount || 0) < 0 ? '#d32f2f' : '#2e7d32',
-                            }}
-                          >
-                            {(e.effective_amount || 0) > 0
-                              ? `+${formatRupiah(e.effective_amount || 0)}`
-                              : formatRupiah(e.effective_amount || 0)}
-                          </Typography>
-                        </Box>
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 700,
-                            color: e.amount < 0 ? '#d32f2f' : '#2e7d32',
-                          }}
-                        >
-                          {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {e.running_balance !== undefined ? formatRupiah(e.running_balance) : '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {e.created_by_username || 'System'}
-                      </Typography>
-                    </TableCell>
-                    {!isArchivedWallet && (
-                      <TableCell align="center">
-                        {e.is_offline_failed ? (
-                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                            <Tooltip title="Coba Sinkronkan Ulang">
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() => onRetryFailedEntry?.(e)}
-                              >
-                                <ReplayIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Pindahkan ke Buku Lain">
-                              <IconButton
-                                size="small"
-                                color="warning"
-                                onClick={() => onMoveFailedEntry?.(e)}
-                              >
-                                <SwapHorizIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Buang / Hapus Entri Gagal">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => onDiscardFailedEntry?.(e)}
-                              >
-                                <DeleteOutlineIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
-                        ) : (
-                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                            <Tooltip
-                              title={
-                                isCorrectionType
-                                  ? 'Entri koreksi tidak dapat dikoreksi ulang'
-                                  : e.is_offline_pending
-                                  ? 'Tunggu sinkronisasi selesai'
-                                  : 'Koreksi Entri'
-                              }
-                            >
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  disabled={isActionDisabled}
-                                  onClick={() => onCorrectEntry(e)}
-                                >
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-                            <Tooltip
-                              title={
-                                isCorrectionType
-                                  ? 'Entri koreksi tidak dapat dipindah'
-                                  : e.is_offline_pending
-                                  ? 'Tunggu sinkronisasi selesai'
-                                  : 'Pindah ke Buku Lain'
-                              }
-                            >
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  disabled={isActionDisabled}
-                                  onClick={() => onMoveEntry(e)}
-                                >
-                                  <SwapHorizIcon fontSize="small" />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-                          </Box>
-                        )}
-                      </TableCell>
                     )}
-                  </TableRow>
-                );
-              })
+                    {e.corrects_entry_id && (
+                      <Typography variant="caption" color="warning.main" display="block">
+                        Koreksi entri: {e.corrects_entry_id.substring(0, 8)}... {e.correction_reason ? `(${e.correction_reason})` : ''}
+                      </Typography>
+                    )}
+                    {Boolean(e.has_corrections) && (
+                      <Chip
+                        label={`Ada ${e.corrections_count} koreksi`}
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
+                      />
+                    )}
+                    {e.offline_error && (
+                      <Typography variant="caption" color="error" display="block" sx={{ fontWeight: 600 }}>
+                        Alasan Ditolak: {e.offline_error}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">{renderAmount(e)}</TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {e.running_balance !== undefined ? formatRupiah(e.running_balance) : '-'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">
+                      {e.created_by_username || 'System'}
+                    </Typography>
+                  </TableCell>
+                  {!isArchivedWallet && <TableCell align="center">{renderActions(e)}</TableCell>}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>

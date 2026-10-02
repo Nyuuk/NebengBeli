@@ -21,6 +21,8 @@ import {
   Paper,
   Chip,
   Tooltip,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -80,6 +82,8 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   onSuccess,
 }) => {
   const { isOnline, refreshPendingCount } = useOnlineStatus();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [rows, setRows] = useState<ShoppingSessionRow[]>([emptyRow(), emptyRow()]);
   const [occurredAt, setOccurredAt] = useState<string>(
     new Date().toISOString().substring(0, 16)
@@ -293,10 +297,22 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={isMobile}>
+      <DialogTitle
+        sx={{
+          fontWeight: 800,
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          gap: 1,
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <ShoppingBagIcon color="primary" /> Sesi Belanja (Catat Banyak Titipan Sekaligus)
+          <ShoppingBagIcon color="primary" />
+          <Box component="span" sx={{ fontSize: { xs: '1.05rem', sm: '1.25rem' } }}>
+            Sesi Belanja {!isMobile && '(Catat Banyak Titipan Sekaligus)'}
+          </Box>
         </Box>
         {hasDraftRestored && (
           <Chip
@@ -322,7 +338,16 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
         )}
 
         {/* Top Controls: Date and Time */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5, flexWrap: 'wrap', gap: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            justifyContent: 'space-between',
+            alignItems: { xs: 'stretch', sm: 'center' },
+            mb: 2.5,
+            gap: 2,
+          }}
+        >
           <TextField
             label="Waktu Belanja"
             type="datetime-local"
@@ -330,20 +355,166 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
             value={occurredAt}
             onChange={(e) => setOccurredAt(e.target.value)}
             InputLabelProps={{ shrink: true }}
-            sx={{ width: 240 }}
+            sx={{ width: { xs: '100%', sm: 240 } }}
           />
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'space-between', sm: 'flex-start' }, gap: 1 }}>
             <Typography variant="body2" color="text.secondary">
               Total Belanja ({validRows.length} item):
             </Typography>
-            <Typography variant="h6" sx={{ fontWeight: 800, color: 'primary.main' }}>
+            <Typography variant="h6" sx={{ fontWeight: 800, color: 'primary.main', fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
               {formatRupiah(totalAmount)}
             </Typography>
           </Box>
         </Box>
 
-        {/* Multi-row Table */}
+        {/* Multi-row input: stacked cards on mobile, dense table on desktop */}
+        {isMobile ? (
+          <Box sx={{ mb: 2 }}>
+            {rows.map((row, idx) => {
+              const selectedWallet = activeWallets.find((w) => w.id === row.wallet_id) || null;
+              const suggestions = suggestionsMap[row.wallet_id] || [];
+
+              return (
+                <Paper
+                  key={row.rowId}
+                  variant="outlined"
+                  sx={{ p: 2, mb: 1.5, borderRadius: 2, position: 'relative' }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                      Baris {idx + 1}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      disabled={rows.length === 1}
+                      onClick={() => handleDeleteRow(idx)}
+                      aria-label={`Hapus baris ${idx + 1}`}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+
+                  <Autocomplete
+                    size="small"
+                    options={activeWallets}
+                    getOptionLabel={(opt) =>
+                      `${opt.name}${opt.owner_username ? ` (@${opt.owner_username})` : ''}`
+                    }
+                    value={selectedWallet}
+                    onChange={(_, opt) => handleRowChange(idx, 'wallet_id', opt ? opt.id : '')}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Buku / Teman"
+                        placeholder="Pilih buku..."
+                        required
+                        fullWidth
+                        inputProps={{
+                          ...params.inputProps,
+                          'aria-label': `Buku baris ${idx + 1}`,
+                        }}
+                      />
+                    )}
+                  />
+
+                  <Autocomplete
+                    size="small"
+                    freeSolo
+                    options={suggestions}
+                    getOptionLabel={(opt) => (typeof opt === 'string' ? opt : opt.item_name)}
+                    isOptionEqualToValue={(option, value) => {
+                      if (typeof value === 'string') {
+                        return option.item_name === value;
+                      }
+                      return option.item_name === value?.item_name;
+                    }}
+                    value={row.item_name}
+                    onInputChange={(_, val, reason) => {
+                      if (reason === 'input') {
+                        handleRowChange(idx, 'item_name', val);
+                      } else if (reason === 'clear') {
+                        handleRowChange(idx, 'item_name', '');
+                      }
+                    }}
+                    onChange={(_, val) => {
+                      if (typeof val === 'object' && val !== null) {
+                        handleSuggestionSelect(idx, val);
+                      } else if (typeof val === 'string') {
+                        const matched = suggestions.find(
+                          (s) => s.item_name.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        if (matched) {
+                          handleSuggestionSelect(idx, matched);
+                        } else {
+                          handleRowChange(idx, 'item_name', val);
+                        }
+                      } else if (val === null) {
+                        handleRowChange(idx, 'item_name', '');
+                      }
+                    }}
+                    renderOption={(props, option) => (
+                      <li {...props} key={option.item_name}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                          <Typography variant="body2">{option.item_name}</Typography>
+                          {option.last_price > 0 && (
+                            <Typography variant="caption" color="text.secondary">
+                              {formatRupiah(option.last_price)}
+                            </Typography>
+                          )}
+                        </Box>
+                      </li>
+                    )}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Barang / Titipan"
+                        placeholder="Contoh: Kopi Susu"
+                        required
+                        fullWidth
+                        sx={{ mt: 1.5 }}
+                        inputProps={{
+                          ...params.inputProps,
+                          'aria-label': `Barang baris ${idx + 1}`,
+                        }}
+                      />
+                    )}
+                  />
+
+                  <Box sx={{ display: 'flex', gap: 1.5, mt: 1.5 }}>
+                    <TextField
+                      size="small"
+                      label="Harga"
+                      placeholder="0"
+                      value={row.amount_str}
+                      onChange={(e) => handleRowChange(idx, 'amount_str', e.target.value)}
+                      sx={{ flex: 1 }}
+                      inputProps={{
+                        inputMode: 'numeric',
+                        'aria-label': `Harga baris ${idx + 1}`,
+                      }}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start">Rp</InputAdornment>,
+                      }}
+                    />
+                    <TextField
+                      size="small"
+                      label="Catatan"
+                      placeholder="Opsional"
+                      value={row.note}
+                      onChange={(e) => handleRowChange(idx, 'note', e.target.value)}
+                      sx={{ flex: 1 }}
+                      inputProps={{
+                        'aria-label': `Catatan baris ${idx + 1}`,
+                      }}
+                    />
+                  </Box>
+                </Paper>
+              );
+            })}
+          </Box>
+        ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, mb: 2 }}>
           <Table size="small">
             <TableHead sx={{ bgcolor: '#f1f5f9' }}>
@@ -500,9 +671,11 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
             </TableBody>
           </Table>
         </TableContainer>
+        )}
 
         <Button
           variant="outlined"
+          fullWidth={isMobile}
           startIcon={<AddIcon />}
           onClick={handleAddRow}
           sx={{ textTransform: 'none', fontWeight: 600 }}
@@ -510,8 +683,16 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
           Tambah Baris Titipan
         </Button>
       </DialogContent>
-      <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
-        <Button onClick={onClose} color="inherit" disabled={isSubmitting}>
+      <DialogActions
+        sx={{
+          p: 2,
+          flexDirection: { xs: 'column-reverse', sm: 'row' },
+          alignItems: 'stretch',
+          gap: { xs: 1, sm: 0 },
+          justifyContent: 'space-between',
+        }}
+      >
+        <Button onClick={onClose} color="inherit" disabled={isSubmitting} sx={{ width: { xs: '100%', sm: 'auto' } }}>
           Batal
         </Button>
         <Button
@@ -519,10 +700,12 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
           size="large"
           disabled={isSubmitting || validRows.length === 0}
           onClick={handleSaveAll}
-          sx={{ px: 4, fontWeight: 800 }}
+          sx={{ px: 4, fontWeight: 800, width: { xs: '100%', sm: 'auto' } }}
         >
           {isSubmitting
             ? 'Menyimpan...'
+            : isMobile
+            ? `Simpan Semua (${validRows.length}) - ${formatRupiah(totalAmount)}`
             : `Simpan Semua (${validRows.length} Titipan - ${formatRupiah(totalAmount)})`}
         </Button>
       </DialogActions>
