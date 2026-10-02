@@ -9,6 +9,24 @@ export interface AuthSession {
 }
 
 /**
+ * Auth endpoints are intentionally IP-rate-limited per the PRD (anti brute-force on
+ * register/login). Against a shared-IP target (CI runner, or this whole suite hitting
+ * a remote deployment), that limit is easy to hit purely from test volume. Retry with
+ * backoff on 429 instead of weakening the limiter or failing the test on it.
+ */
+async function withRateLimitRetry<T extends { status: () => number }>(
+  send: () => Promise<T>,
+  maxAttempts = 5
+): Promise<T> {
+  let res = await send();
+  for (let attempt = 1; res.status() === 429 && attempt < maxAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt * 1500));
+    res = await send();
+  }
+  return res;
+}
+
+/**
  * Register a user via backend API using standard auth flow.
  */
 export async function registerUser(
@@ -16,12 +34,14 @@ export async function registerUser(
   username: string,
   password = DEFAULT_PASSWORD
 ): Promise<{ success: boolean; user?: any; error?: string }> {
-  const res = await request.post('/api/auth/register', {
-    data: {
-      username,
-      password,
-    },
-  });
+  const res = await withRateLimitRetry(() =>
+    request.post('/api/auth/register', {
+      data: {
+        username,
+        password,
+      },
+    })
+  );
 
   const body = await res.json().catch(() => ({}));
   if (!res.ok()) {
@@ -38,12 +58,14 @@ export async function loginUser(
   username: string,
   password = DEFAULT_PASSWORD
 ): Promise<{ success: boolean; user?: any; expiresAt?: string; error?: string }> {
-  const res = await request.post('/api/auth/login', {
-    data: {
-      username,
-      password,
-    },
-  });
+  const res = await withRateLimitRetry(() =>
+    request.post('/api/auth/login', {
+      data: {
+        username,
+        password,
+      },
+    })
+  );
 
   const body = await res.json().catch(() => ({}));
   if (!res.ok()) {

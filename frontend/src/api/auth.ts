@@ -3,7 +3,6 @@ import { User } from '../types';
 
 export interface AuthResponse {
   user: User;
-  token?: string;
   expires_at?: string;
 }
 
@@ -46,6 +45,6 @@ export async function resetPasswordApi(newPassword: string): Promise<{ message: 
   });
 }
 
-export async function renewAuthTokenApi(): Promise<{ message?: string; user?: User; token?: string; expires_at?: string }> {
+export async function renewAuthTokenApi(): Promise<{ message?: string; user?: User; expires_at?: string }> {
   return request('/api/auth/renew', { method: 'POST' });
 }

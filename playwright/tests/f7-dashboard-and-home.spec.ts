@@ -39,8 +39,12 @@ test.describe('F7: Beranda Pemilik & Pengelompokan Pembuat', () => {
     const approveButtons = ownerPage.getByRole('button', { name: /Setujui|Approve/i });
     const count = await approveButtons.count();
     for (let i = 0; i < count; i++) {
+      const before = await approveButtons.count();
       await approveButtons.first().click();
-      await ownerPage.waitForTimeout(400);
+      // Each approval triggers a re-fetch that removes its row's action buttons;
+      // wait for that to land before clicking the next one, since the list is
+      // re-rendered from the server response rather than updated optimistically.
+      await expect(approveButtons).toHaveCount(before - 1, { timeout: 10000 });
     }
 
     // 3. Open Owner Dashboard

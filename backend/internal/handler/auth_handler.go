@@ -53,7 +53,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusCreated, gin.H{
 		"user":       user,
-		"token":      token,
 		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
@@ -74,7 +73,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{
 		"user":       user,
-		"token":      token,
 		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
@@ -96,7 +94,6 @@ func (h *AuthHandler) Renew(c *gin.Context) {
 	h.setAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{
 		"user":       renewedUser,
-		"token":      token,
 		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }

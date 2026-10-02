@@ -19,6 +19,12 @@ var mig002UpSQL string
 //go:embed migrations/000002_entry_permissions.down.sql
 var mig002DownSQL string
 
+//go:embed migrations/000003_entries_fk_lock_fix.up.sql
+var mig003UpSQL string
+
+//go:embed migrations/000003_entries_fk_lock_fix.down.sql
+var mig003DownSQL string
+
 type migration struct {
 	version int
 	name    string
@@ -29,6 +35,7 @@ type migration struct {
 var migrations = []migration{
 	{version: 1, name: "000001_init_schema", upSQL: mig001UpSQL, downSQL: mig001DownSQL},
 	{version: 2, name: "000002_entry_permissions", upSQL: mig002UpSQL, downSQL: mig002DownSQL},
+	{version: 3, name: "000003_entries_fk_lock_fix", upSQL: mig003UpSQL, downSQL: mig003DownSQL},
 }
 
 func RunMigrations(db *sql.DB) error {

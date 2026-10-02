@@ -1,17 +1,22 @@
 import { test, expect, setupApiRouting, API_URL } from '../fixtures/test-fixtures';
 import { generateUniqueUsername, DEFAULT_PASSWORD } from '../helpers/test-data';
 import { loginViaUI } from '../helpers/auth';
-import { ensureAdminUserCLI, seedDevFixtures } from '../helpers/dev-fixtures';
+import { ensureAdminUserCLI, seedDevFixtures, getDevStatus } from '../helpers/dev-fixtures';
+
+// Against a deployed environment (no /api/dev/* routes), an admin account must already exist
+// (created out-of-band via the CLI, per PRD F10) and is supplied through env vars.
+const adminUsername = process.env.E2E_ADMIN_USERNAME || 'test_admin';
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || DEFAULT_PASSWORD;
 
 test.describe('F9: Admin Panel & Read-Only Dashboard', () => {
-  const adminUsername = 'test_admin';
-  const adminPassword = DEFAULT_PASSWORD;
-
   test.beforeAll(async ({ playwright }) => {
-    // Seed dev admin account
     const request = await playwright.request.newContext({ baseURL: API_URL });
-    await seedDevFixtures(request, 'standard', adminPassword);
-    ensureAdminUserCLI(adminUsername, adminPassword);
+    const devStatus = await getDevStatus(request);
+    if (devStatus.enabled) {
+      // Local/dev stack: seed a known admin account via dev-only fixtures.
+      await seedDevFixtures(request, 'standard', adminPassword);
+      ensureAdminUserCLI(adminUsername, adminPassword);
+    }
     await request.dispose();
   });
 

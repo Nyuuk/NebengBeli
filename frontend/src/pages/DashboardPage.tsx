@@ -73,14 +73,15 @@ export const DashboardPage: React.FC = () => {
 
       if (isOnline) {
         // Online: Fetch fresh data from APIs
-        const [activeList, archivedList, linkRequests, insightsData] = await Promise.all([
-          getWalletsApi(false).catch(() => []),
+        // getWalletsApi(true) already returns active + archived wallets (archived=true
+        // means "include archived", not "archived only"), so a single call covers both;
+        // calling it alongside getWalletsApi(false) would double every active wallet.
+        const [allWallets, linkRequests, insightsData] = await Promise.all([
           getWalletsApi(true).catch(() => []),
           listLinkRequestsApi().catch(() => []),
           getCreatorInsightsApi().catch(() => null),
         ]);
 
-        const allWallets = [...activeList, ...archivedList];
         setWallets(allWallets);
         await setCachedWallets(allWallets, 'all');
 
@@ -91,8 +92,8 @@ export const DashboardPage: React.FC = () => {
           setInsights(insightsData);
           await setCachedInsights(insightsData);
         } else {
-          // Compute fallback insights from creator wallets
-          const creatorWallets = activeList.filter((w) => w.user_role === 'creator' || w.user_role === 'both' || !w.user_role);
+          // Compute fallback insights from active creator wallets
+          const creatorWallets = allWallets.filter((w) => !w.is_archived && (w.user_role === 'creator' || w.user_role === 'both' || !w.user_role));
           const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance > 0 ? w.balance : 0), 0);
           const fallbackInsights: CreatorInsights = {
             total_money_outside: moneyOutside,
