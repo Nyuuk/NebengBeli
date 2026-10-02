@@ -115,17 +115,11 @@ export function generateRekapText(
       const dt = new Date(e.occurred_at || e.created_at);
       const timeStr = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
       const dateStr = dt.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
-      let typeStr = 'Titipan';
-      let sign = '+';
-      if (e.type === 'topup') {
-        typeStr = 'Top-up/Bayar';
-        sign = '-';
-      } else if (e.type === 'koreksi') {
-        typeStr = 'Koreksi';
-        // A positive delta now means the debt went down (titipan corrected lower, or
-        // topup corrected higher), so it reads like a payment ('-') on the tab.
-        sign = e.amount >= 0 ? '-' : '+';
-      }
+      const typeStr = e.type === 'topup' ? 'Top-up/Bayar' : e.type === 'koreksi' ? 'Koreksi' : 'Titipan';
+      // Use the entry's actual signed amount (titipan debit/negative, topup credit/positive)
+      // so each line sums to the same Total Transaksi / Saldo Akhir shown below, instead of
+      // a type-based +/- that reads naturally per line but doesn't add up to the total.
+      const sign = e.amount >= 0 ? '+' : '';
 
       const noteStr = e.note ? ` (${e.note})` : '';
       const offlineMark = e.is_offline_failed
@@ -136,7 +130,7 @@ export function generateRekapText(
       lines.push(
         `${idx + 1}. [${dateStr} ${timeStr}] ${e.item_name}${noteStr}`
       );
-      lines.push(`   └ ${typeStr}: ${sign}${formatRupiah(Math.abs(e.amount))}${offlineMark}`);
+      lines.push(`   └ ${typeStr}: ${sign}${formatRupiah(e.amount)}${offlineMark}`);
     });
   }
 
