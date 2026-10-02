@@ -38,7 +38,10 @@ export async function setupApiRouting(context: BrowserContext, apiUrl = API_URL)
       });
       await route.fulfill({ response });
     } catch {
-      await route.abort();
+      // The underlying request can already be settled (e.g. page navigated away
+      // mid-flight during offline/online toggling in F11 tests), in which case
+      // the route is no longer ours to resolve.
+      await route.abort().catch(() => {});
     }
   });
 }

@@ -112,9 +112,27 @@ export async function loginViaUI(
   await page.getByLabel(/Username/i).fill(username);
   await page.locator('input[type="password"]').fill(password);
 
-  await page.getByRole('button', { name: /masuk|login/i }).click();
+  const submit = page.getByRole('button', { name: /masuk|login/i });
+  const rateLimitAlert = page.getByRole('alert').filter({ hasText: /too many requests|terlalu banyak/i });
 
-  // Verify successful redirection to home/dashboard
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await submit.click();
+    const redirected = await page
+      .waitForURL(/\/$|\/wallets/, { timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
+    if (redirected) return;
+
+    // Same shared-IP auth rate limit as the API helpers; retry with backoff
+    // instead of failing, rather than weakening the limiter for tests.
+    if (await rateLimitAlert.isVisible().catch(() => false)) {
+      await page.waitForTimeout(attempt * 1500);
+      continue;
+    }
+    break;
+  }
+
+  // Final attempt: surface the real failure if it wasn't rate limiting.
   await expect(page).toHaveURL(/\/$|\/wallets/, { timeout: 10000 });
 }
 
