@@ -737,7 +737,7 @@ func (r *sqlEntryRepository) GetItemSuggestions(ctx context.Context, walletID uu
 			WHERE wallet_id = $1 AND type = 'titipan'
 			  AND ($2 = '' OR item_name ILIKE '%' || $2 || '%')
 		)
-		SELECT item_name, amount AS last_price, freq AS frequency, last_occ AS last_occurred_at
+		SELECT item_name, ABS(amount) AS last_price, freq AS frequency, last_occ AS last_occurred_at
 		FROM ranked
 		WHERE rn = 1
 		ORDER BY freq DESC, last_occurred_at DESC, item_name ASC
@@ -814,7 +814,7 @@ func (r *sqlEntryRepository) GetTrendsByCreator(ctx context.Context, creatorID u
 	SELECT
 			TO_CHAR(e.occurred_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD') AS day_label,
 			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
+			COALESCE(SUM(ABS(e.amount)), 0) AS total_amount
 		FROM entries e
 		JOIN wallets w ON e.wallet_id = w.id
 		WHERE w.creator_id = $1
@@ -839,7 +839,7 @@ func (r *sqlEntryRepository) GetTrendsByCreator(ctx context.Context, creatorID u
 	SELECT
 			TO_CHAR(DATE_TRUNC('week', e.occurred_at AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS week_label,
 			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
+			COALESCE(SUM(ABS(e.amount)), 0) AS total_amount
 		FROM entries e
 		JOIN wallets w ON e.wallet_id = w.id
 		WHERE w.creator_id = $1
@@ -864,7 +864,7 @@ func (r *sqlEntryRepository) GetTrendsByCreator(ctx context.Context, creatorID u
 	SELECT
 			TO_CHAR(e.occurred_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM') AS month_label,
 			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
+			COALESCE(SUM(ABS(e.amount)), 0) AS total_amount
 		FROM entries e
 		JOIN wallets w ON e.wallet_id = w.id
 		WHERE w.creator_id = $1
@@ -899,7 +899,7 @@ func (r *sqlEntryRepository) GetAdminTrends(ctx context.Context) (*model.Insight
 		SELECT
 			TO_CHAR(e.occurred_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD') AS day_label,
 			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
+			COALESCE(SUM(ABS(e.amount)), 0) AS total_amount
 		FROM entries e
 		WHERE e.type = 'titipan'
 		  AND e.occurred_at >= NOW() - INTERVAL '30 days'
@@ -922,7 +922,7 @@ func (r *sqlEntryRepository) GetAdminTrends(ctx context.Context) (*model.Insight
 		SELECT
 			TO_CHAR(DATE_TRUNC('week', e.occurred_at AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS week_label,
 			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
+			COALESCE(SUM(ABS(e.amount)), 0) AS total_amount
 		FROM entries e
 		WHERE e.type = 'titipan'
 		  AND e.occurred_at >= NOW() - INTERVAL '12 weeks'
@@ -945,7 +945,7 @@ func (r *sqlEntryRepository) GetAdminTrends(ctx context.Context) (*model.Insight
 		SELECT
 			TO_CHAR(e.occurred_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM') AS month_label,
 			COUNT(e.id) AS count,
-			COALESCE(SUM(e.amount), 0) AS total_amount
+			COALESCE(SUM(ABS(e.amount)), 0) AS total_amount
 		FROM entries e
 		WHERE e.type = 'titipan'
 		  AND e.occurred_at >= NOW() - INTERVAL '12 months'
@@ -985,7 +985,7 @@ func (r *sqlEntryRepository) GetAdminCreators(ctx context.Context) ([]model.Admi
 		LEFT JOIN entries e ON e.wallet_id = w.id
 		WHERE u.role = 'user' OR w.id IS NOT NULL
 		GROUP BY u.id, u.username
-		ORDER BY total_titipan_amount DESC, u.username ASC;
+		ORDER BY total_titipan_amount ASC, u.username ASC;
 	`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -1011,8 +1011,8 @@ func (r *sqlEntryRepository) GetAdminCreators(ctx context.Context) ([]model.Admi
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan admin creator detail: %w", err)
 		}
-		// Total outstanding for this creator
-		c.TotalOutstanding = c.TotalTitipanAmount + c.TotalTopupAmount + c.TotalKoreksiAmount
+		// Total outstanding for this creator (net balance is negative when money is owed to them)
+		c.TotalOutstanding = -(c.TotalTitipanAmount + c.TotalTopupAmount + c.TotalKoreksiAmount)
 		creators = append(creators, c)
 	}
 

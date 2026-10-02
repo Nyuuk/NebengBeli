@@ -105,11 +105,11 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		if itemName == "" {
 			return nil, false, ErrItemNameRequired
 		}
-		// Titipan represents debt/spending on behalf (+signed)
+		// Titipan is a debit against the owner: negative (PRD: "Titipan | Debit (−)")
 		if req.Amount < 0 {
-			signedAmount = -req.Amount
-		} else {
 			signedAmount = req.Amount
+		} else {
+			signedAmount = -req.Amount
 		}
 
 	case model.EntryTypeTopup:
@@ -119,11 +119,11 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		if itemName == "" {
 			itemName = "Top-up"
 		}
-		// Topup represents payment/settlement (-signed)
+		// Topup is a credit against the owner: positive (PRD: "Top-up | Kredit (+)")
 		if req.Amount > 0 {
-			signedAmount = -req.Amount
-		} else {
 			signedAmount = req.Amount
+		} else {
+			signedAmount = -req.Amount
 		}
 
 	case model.EntryTypeKoreksi:
@@ -178,15 +178,15 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		var targetSigned int64
 		switch refEntry.Type {
 		case model.EntryTypeTitipan:
-			// Titipan is +signed
-			targetSigned = targetNominal
-		case model.EntryTypeTopup:
-			// Topup is -signed
+			// Titipan is -signed
 			if targetNominal == 0 {
 				targetSigned = 0
 			} else {
 				targetSigned = -targetNominal
 			}
+		case model.EntryTypeTopup:
+			// Topup is +signed
+			targetSigned = targetNominal
 		}
 
 		// Server-side delta calculation
@@ -370,16 +370,18 @@ func (s *entryService) CreateBatchEntries(ctx context.Context, userID uuid.UUID,
 		var signedAmount int64
 		switch entryType {
 		case model.EntryTypeTitipan:
+			// Titipan is -signed (PRD: "Titipan | Debit (−)")
 			if item.Amount < 0 {
-				signedAmount = -item.Amount
-			} else {
 				signedAmount = item.Amount
+			} else {
+				signedAmount = -item.Amount
 			}
 		case model.EntryTypeTopup:
+			// Topup is +signed (PRD: "Top-up | Kredit (+)")
 			if item.Amount > 0 {
-				signedAmount = -item.Amount
-			} else {
 				signedAmount = item.Amount
+			} else {
+				signedAmount = -item.Amount
 			}
 		case model.EntryTypeKoreksi:
 			signedAmount = item.Amount

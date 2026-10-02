@@ -82,8 +82,8 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
 
   // Parse user entered correct amount
   const parsedTarget = parseInt(correctAmountStr.replace(/[^0-9]/g, ''), 10) || 0;
-  // Signed target: titipan is positive debt, topup is negative credit
-  const signedTarget = isTopup ? -parsedTarget : parsedTarget;
+  // Signed target: titipan is negative debt, topup is positive credit
+  const signedTarget = isTopup ? parsedTarget : -parsedTarget;
   // Delta needed = signedTarget - effectiveAmount
   const delta = signedTarget - effectiveAmount;
 

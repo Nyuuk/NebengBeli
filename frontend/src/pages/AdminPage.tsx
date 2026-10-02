@@ -367,7 +367,7 @@ export const AdminPage: React.FC = () => {
                     <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                       <Typography variant="caption" color="text.secondary">Total Transaksi Titipan</Typography>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        {formatRupiah(entriesSummary.total_titipan_amount)} ({entriesSummary.total_titipan_count})
+                        {formatRupiah(Math.abs(entriesSummary.total_titipan_amount))} ({entriesSummary.total_titipan_count})
                       </Typography>
                     </Paper>
                   </Grid>
@@ -494,7 +494,7 @@ export const AdminPage: React.FC = () => {
                           <TableCell align="center">
                             <Chip label={c.active_wallets} size="small" color="success" />
                           </TableCell>
-                          <TableCell align="right">{formatRupiah(c.total_titipan_amount)}</TableCell>
+                          <TableCell align="right">{formatRupiah(Math.abs(c.total_titipan_amount))}</TableCell>
                           <TableCell align="right">{formatRupiah(Math.abs(c.total_topup_amount))}</TableCell>
                           <TableCell align="right">{formatRupiah(c.total_koreksi_amount)}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: 700, color: 'primary.main' }}>

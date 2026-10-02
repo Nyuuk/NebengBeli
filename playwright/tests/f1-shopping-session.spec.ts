@@ -177,7 +177,7 @@ test.describe('F1: Sesi Belanja (Shopping Session)', () => {
     expect(batchRes.status()).toBe(201);
     const body = await batchRes.json();
     expect(body.count).toBe(2);
-    expect(body.total_amount).toBe(35000);
+    expect(body.total_amount).toBe(-35000);
     expect(body.entries).toHaveLength(2);
   });
 });

@@ -94,12 +94,12 @@ export const DashboardPage: React.FC = () => {
         } else {
           // Compute fallback insights from active creator wallets
           const creatorWallets = allWallets.filter((w) => !w.is_archived && (w.user_role === 'creator' || w.user_role === 'both' || !w.user_role));
-          const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance > 0 ? w.balance : 0), 0);
+          const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
           const fallbackInsights: CreatorInsights = {
             total_money_outside: moneyOutside,
             active_wallets_count: creatorWallets.length,
             total_wallets_count: allWallets.length,
-            total_titipan_volume: creatorWallets.reduce((sum, w) => sum + (w.balance > 0 ? w.balance : 0), 0),
+            total_titipan_volume: creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0),
             total_titipan_count: creatorWallets.reduce((sum, w) => sum + w.entry_count, 0),
             daily_trends: [],
             weekly_trends: [],
@@ -384,7 +384,7 @@ export const DashboardPage: React.FC = () => {
                           variant="h5"
                           sx={{
                             fontWeight: 800,
-                            color: w.balance > 0 ? '#d32f2f' : w.balance < 0 ? '#0288d1' : '#2e7d32',
+                            color: w.balance < 0 ? '#d32f2f' : w.balance > 0 ? '#0288d1' : '#2e7d32',
                           }}
                         >
                           {formatRupiah(w.balance)}
@@ -450,7 +450,7 @@ export const DashboardPage: React.FC = () => {
                         variant="subtitle1"
                         sx={{
                           fontWeight: 800,
-                          color: group.subtotal > 0 ? '#d32f2f' : group.subtotal < 0 ? '#0288d1' : '#2e7d32',
+                          color: group.subtotal < 0 ? '#d32f2f' : group.subtotal > 0 ? '#0288d1' : '#2e7d32',
                         }}
                       >
                         {formatRupiah(group.subtotal)}
@@ -505,7 +505,7 @@ export const DashboardPage: React.FC = () => {
                                 variant="h5"
                                 sx={{
                                   fontWeight: 800,
-                                  color: w.balance > 0 ? '#d32f2f' : w.balance < 0 ? '#0288d1' : '#2e7d32',
+                                  color: w.balance < 0 ? '#d32f2f' : w.balance > 0 ? '#0288d1' : '#2e7d32',
                                 }}
                               >
                                 {formatRupiah(w.balance)}

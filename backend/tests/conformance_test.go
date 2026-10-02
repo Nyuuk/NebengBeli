@@ -85,8 +85,8 @@ func TestF3_Correction_Contract_FinalNominal_RepeatedCorrections_And_Auth(t *tes
 	if err != nil {
 		t.Fatalf("first correction failed: %v", err)
 	}
-	if corr1.Amount != -10000 {
-		t.Errorf("expected delta -10000, got %d", corr1.Amount)
+	if corr1.Amount != 10000 {
+		t.Errorf("expected delta 10000, got %d", corr1.Amount)
 	}
 	if corr1.ItemName != "Nasi Padang" {
 		t.Errorf("expected auto-populated item_name 'Nasi Padang', got '%s'", corr1.ItemName)
@@ -117,17 +117,17 @@ func TestF3_Correction_Contract_FinalNominal_RepeatedCorrections_And_Auth(t *tes
 	if err != nil {
 		t.Fatalf("second correction failed: %v", err)
 	}
-	if corr2.Amount != -5000 {
-		t.Errorf("expected delta -5000, got %d", corr2.Amount)
+	if corr2.Amount != 5000 {
+		t.Errorf("expected delta 5000, got %d", corr2.Amount)
 	}
 
-	// Check effective amount of original entry is now 35,000
+	// Check effective amount of original entry is now -35,000
 	updatedOrig, err := entryRepo.GetByID(context.Background(), orig.ID)
 	if err != nil {
 		t.Fatalf("failed to fetch updated original: %v", err)
 	}
-	if updatedOrig.EffectiveAmount != 35000 {
-		t.Errorf("expected effective amount 35000, got %d", updatedOrig.EffectiveAmount)
+	if updatedOrig.EffectiveAmount != -35000 {
+		t.Errorf("expected effective amount -35000, got %d", updatedOrig.EffectiveAmount)
 	}
 
 	// 7. Cancellation Test: Target final nominal 0 (pembatalan)
@@ -143,8 +143,8 @@ func TestF3_Correction_Contract_FinalNominal_RepeatedCorrections_And_Auth(t *tes
 	if err != nil {
 		t.Fatalf("cancellation correction failed: %v", err)
 	}
-	if corrCancel.Amount != -35000 {
-		t.Errorf("expected cancellation delta -35000, got %d", corrCancel.Amount)
+	if corrCancel.Amount != 35000 {
+		t.Errorf("expected cancellation delta 35000, got %d", corrCancel.Amount)
 	}
 
 	cancelledOrig, _ := entryRepo.GetByID(context.Background(), orig.ID)
@@ -180,7 +180,7 @@ func TestF3_TopupCorrection_Contract(t *testing.T) {
 
 	svc := service.NewEntryService(entryRepo, walletRepo, auditRepo)
 
-	// 1. Create Topup of 100,000 (signed as -100,000)
+	// 1. Create Topup of 100,000 (signed as +100,000)
 	topup, _, err := svc.CreateEntry(context.Background(), creatorID, model.RoleUser, service.CreateEntryRequest{
 		WalletID: wallet.ID,
 		Type:     model.EntryTypeTopup,
@@ -190,12 +190,12 @@ func TestF3_TopupCorrection_Contract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topup: %v", err)
 	}
-	if topup.Amount != -100000 {
-		t.Errorf("expected topup amount -100000, got %d", topup.Amount)
+	if topup.Amount != 100000 {
+		t.Errorf("expected topup amount 100000, got %d", topup.Amount)
 	}
 
-	// 2. Correct Topup: nominal was actually 80,000 (target signed -80,000)
-	// Delta = (-80,000) - (-100,000) = +20,000
+	// 2. Correct Topup: nominal was actually 80,000 (target signed +80,000)
+	// Delta = (+80,000) - (+100,000) = -20,000
 	corrTopup, _, err := svc.CreateEntry(context.Background(), creatorID, model.RoleUser, service.CreateEntryRequest{
 		WalletID:         wallet.ID,
 		Type:             model.EntryTypeKoreksi,
@@ -206,13 +206,13 @@ func TestF3_TopupCorrection_Contract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("topup correction failed: %v", err)
 	}
-	if corrTopup.Amount != 20000 {
-		t.Errorf("expected topup correction delta +20000, got %d", corrTopup.Amount)
+	if corrTopup.Amount != -20000 {
+		t.Errorf("expected topup correction delta -20000, got %d", corrTopup.Amount)
 	}
 
 	updatedTopup, _ := entryRepo.GetByID(context.Background(), topup.ID)
-	if updatedTopup.EffectiveAmount != -80000 {
-		t.Errorf("expected updated topup effective amount -80000, got %d", updatedTopup.EffectiveAmount)
+	if updatedTopup.EffectiveAmount != 80000 {
+		t.Errorf("expected updated topup effective amount 80000, got %d", updatedTopup.EffectiveAmount)
 	}
 }
 
@@ -277,14 +277,14 @@ func TestF3_Move_PreservesEffectiveValue_And_Idempotency(t *testing.T) {
 		t.Fatalf("move failed: %v", err)
 	}
 
-	if srcCorr.Amount != -50000 {
-		t.Errorf("expected source correction amount -50000, got %d", srcCorr.Amount)
+	if srcCorr.Amount != 50000 {
+		t.Errorf("expected source correction amount 50000, got %d", srcCorr.Amount)
 	}
 	if srcCorr.CorrectionReason != "salah dompet" {
 		t.Errorf("expected correction reason 'salah dompet', got '%s'", srcCorr.CorrectionReason)
 	}
-	if dstNew.Amount != 50000 {
-		t.Errorf("expected destination new entry amount 50000, got %d", dstNew.Amount)
+	if dstNew.Amount != -50000 {
+		t.Errorf("expected destination new entry amount -50000, got %d", dstNew.Amount)
 	}
 	if dstNew.WalletID != walletDst.ID {
 		t.Errorf("expected destination wallet %s, got %s", walletDst.ID, dstNew.WalletID)
@@ -331,7 +331,7 @@ func TestF9_Admin_Endpoints(t *testing.T) {
 		ClientID:   uuid.New(),
 		WalletID:   wallet.ID,
 		Type:       model.EntryTypeTitipan,
-		Amount:     25000,
+		Amount:     -25000,
 		ItemName:   "Es Teh",
 		CreatedBy:  normalUser.ID,
 		OccurredAt: now,
@@ -341,7 +341,7 @@ func TestF9_Admin_Endpoints(t *testing.T) {
 		ClientID:   uuid.New(),
 		WalletID:   wallet.ID,
 		Type:       model.EntryTypeTopup,
-		Amount:     -25000,
+		Amount:     25000,
 		ItemName:   "Top-up",
 		CreatedBy:  normalUser.ID,
 		OccurredAt: now,
@@ -476,7 +476,7 @@ func TestAsiaJakarta_Statement_PeriodRecap(t *testing.T) {
 		ID:         uuid.New(),
 		WalletID:   wallet.ID,
 		Type:       model.EntryTypeTitipan,
-		Amount:     50000,
+		Amount:     -50000,
 		ItemName:   "Makan Siang Kemarin",
 		OccurredAt: time.Date(2026, 9, 29, 20, 0, 0, 0, wibLoc).UTC(),
 		CreatedBy:  creatorID,
@@ -487,7 +487,7 @@ func TestAsiaJakarta_Statement_PeriodRecap(t *testing.T) {
 		ID:         uuid.New(),
 		WalletID:   wallet.ID,
 		Type:       model.EntryTypeTitipan,
-		Amount:     25000,
+		Amount:     -25000,
 		ItemName:   "Kopi Pagi",
 		OccurredAt: time.Date(2026, 9, 30, 2, 0, 0, 0, wibLoc).UTC(),
 		CreatedBy:  creatorID,
@@ -505,17 +505,17 @@ func TestAsiaJakarta_Statement_PeriodRecap(t *testing.T) {
 		t.Fatalf("GetStatement failed: %v", err)
 	}
 
-	// Starting balance should be 50,000 (from yesterday's entry)
-	if resp.Summary.StartingBalance != 50000 {
-		t.Errorf("expected StartingBalance 50000, got %d", resp.Summary.StartingBalance)
+	// Starting balance should be -50,000 (from yesterday's entry)
+	if resp.Summary.StartingBalance != -50000 {
+		t.Errorf("expected StartingBalance -50000, got %d", resp.Summary.StartingBalance)
 	}
-	// Period total should be 25,000 (today's entry)
-	if resp.Summary.PeriodTotal != 25000 {
-		t.Errorf("expected PeriodTotal 25000, got %d", resp.Summary.PeriodTotal)
+	// Period total should be -25,000 (today's entry)
+	if resp.Summary.PeriodTotal != -25000 {
+		t.Errorf("expected PeriodTotal -25000, got %d", resp.Summary.PeriodTotal)
 	}
-	// Ending balance should be 75,000
-	if resp.Summary.EndingBalance != 75000 {
-		t.Errorf("expected EndingBalance 75000, got %d", resp.Summary.EndingBalance)
+	// Ending balance should be -75,000
+	if resp.Summary.EndingBalance != -75000 {
+		t.Errorf("expected EndingBalance -75000, got %d", resp.Summary.EndingBalance)
 	}
 	// Filtered entries should only contain 1 entry (Kopi Pagi)
 	if len(resp.Entries) != 1 || resp.Entries[0].ItemName != "Kopi Pagi" {

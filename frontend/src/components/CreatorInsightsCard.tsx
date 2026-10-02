@@ -34,10 +34,10 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
 
   const maxVolume = Math.max(...trends.map((t) => t.volume), 1);
 
-  // Sort wallets by highest outstanding balance (most debt owed to creator)
+  // Sort wallets by highest outstanding balance (most debt owed to creator = most negative first)
   const rankedWallets = [...(insights.wallet_balances || [])]
     .filter((w) => !w.is_archived)
-    .sort((a, b) => b.balance - a.balance);
+    .sort((a, b) => a.balance - b.balance);
 
   return (
     <Card elevation={2} sx={{ borderRadius: 3, mb: 3, bgcolor: '#ffffff' }}>
@@ -236,7 +236,7 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
                       variant="body2"
                       sx={{
                         fontWeight: 800,
-                        color: w.balance > 0 ? '#d32f2f' : w.balance < 0 ? '#0288d1' : '#2e7d32',
+                        color: w.balance < 0 ? '#d32f2f' : w.balance > 0 ? '#0288d1' : '#2e7d32',
                         flexShrink: 0,
                       }}
                     >

@@ -27,9 +27,9 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
   const balance = summary.current_balance;
   let balanceStatusText = 'Lunas / Seimbang';
 
-  if (balance > 0) {
+  if (balance < 0) {
     balanceStatusText = 'Total Tagihan Belum Dibayar';
-  } else if (balance < 0) {
+  } else if (balance > 0) {
     balanceStatusText = 'Kelebihan Bayar / Saldo Positif';
   }
 
@@ -67,7 +67,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
               label={balanceStatusText}
               size="small"
               sx={{
-                bgcolor: balance === 0 ? '#4caf50' : balance > 0 ? '#ff5252' : '#40c4ff',
+                bgcolor: balance === 0 ? '#4caf50' : balance < 0 ? '#ff5252' : '#40c4ff',
                 color: '#fff',
                 fontWeight: 600,
               }}
@@ -85,7 +85,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
                 </Typography>
               </Box>
               <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.2 }}>
-                {formatRupiah(summary.total_titipan)}
+                {formatRupiah(Math.abs(summary.total_titipan))}
               </Typography>
             </Grid>
 

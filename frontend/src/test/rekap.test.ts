@@ -29,7 +29,7 @@ describe('Rekap Teks (Export to Text) Generation', () => {
         client_id: 'c-1',
         wallet_id: 'wallet-123',
         type: 'titipan',
-        amount: 25000,
+        amount: -25000,
         item_name: 'Kopi Kenangan',
         note: '',
         occurred_at: yesterday,
@@ -42,7 +42,7 @@ describe('Rekap Teks (Export to Text) Generation', () => {
         client_id: 'c-2',
         wallet_id: 'wallet-123',
         type: 'titipan',
-        amount: 30000,
+        amount: -30000,
         item_name: 'Makan Siang Nasi Padang',
         note: 'Rendang + perkedel',
         occurred_at: todayMorning,
@@ -54,7 +54,7 @@ describe('Rekap Teks (Export to Text) Generation', () => {
         client_id: 'c-3',
         wallet_id: 'wallet-123',
         type: 'topup',
-        amount: -35000,
+        amount: 35000,
         item_name: 'Transfer QRIS',
         note: 'BCA',
         occurred_at: todayNoon,
@@ -65,17 +65,17 @@ describe('Rekap Teks (Export to Text) Generation', () => {
 
     const result = generateRekapText(mockWallet, entries, 'today');
 
-    expect(result.startingBalance).toBe(25000);
+    expect(result.startingBalance).toBe(-25000);
     expect(result.filteredEntries.length).toBe(2);
-    expect(result.totalDelta).toBe(-5000); // 30000 - 35000
-    expect(result.endingBalance).toBe(20000); // 25000 + (-5000)
+    expect(result.totalDelta).toBe(5000); // -30000 + 35000
+    expect(result.endingBalance).toBe(-20000); // -25000 + 5000
 
     expect(result.rekapText).toContain('REKAP BUKU TITIPAN — RENDY - KOPI');
     expect(result.rekapText).toContain('rahmat_ob');
-    expect(result.rekapText).toContain('Saldo Awal: Rp\u00a025.000');
+    expect(result.rekapText).toContain('Saldo Awal: -Rp\u00a025.000');
     expect(result.rekapText).toContain('Makan Siang Nasi Padang (Rendang + perkedel)');
     expect(result.rekapText).toContain('Transfer QRIS (BCA)');
-    expect(result.rekapText).toContain('Saldo Akhir: Rp\u00a020.000');
+    expect(result.rekapText).toContain('Saldo Akhir: -Rp\u00a020.000');
   });
 
   it('should flag offline pending entries in recap', () => {

@@ -9,8 +9,10 @@ const API_URL = process.env.PLAYWRIGHT_API_URL || process.env.API_URL || 'http:/
 
 export default defineConfig({
   testDir: './tests',
-  /* Maximum time one test can run for. */
-  timeout: 30 * 1000,
+  /* Maximum time one test can run for. Generous enough to absorb the auth
+   * rate-limit backoff (helpers/auth.ts) when multiple fixtures in one test
+   * need to register/login against a shared-IP target in quick succession. */
+  timeout: 45 * 1000,
   expect: {
     /**
      * Maximum time expect() should wait for the condition to be met.

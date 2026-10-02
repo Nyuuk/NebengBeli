@@ -34,8 +34,8 @@ describe('UI Component Integration Tests', () => {
       weekly_trends: [],
       monthly_trends: [],
       wallet_balances: [
-        { wallet_id: 'w-1', wallet_name: 'Rendy - Kopi', balance: 50000, owner_username: 'rendy', is_archived: false },
-        { wallet_id: 'w-2', wallet_name: 'Budi - Makan', balance: 75000, owner_username: 'budi', is_archived: false },
+        { wallet_id: 'w-1', wallet_name: 'Rendy - Kopi', balance: -50000, owner_username: 'rendy', is_archived: false },
+        { wallet_id: 'w-2', wallet_name: 'Budi - Makan', balance: -75000, owner_username: 'budi', is_archived: false },
       ],
     };
 
@@ -54,7 +54,7 @@ describe('UI Component Integration Tests', () => {
       client_id: 'c-100',
       wallet_id: 'w-1',
       type: 'titipan',
-      amount: 30000,
+      amount: -30000,
       item_name: 'Nasi Bebek',
       note: 'Pedas',
       occurred_at: new Date().toISOString(),
@@ -113,7 +113,7 @@ describe('UI Component Integration Tests', () => {
         client_id: 'c-1',
         wallet_id: 'w-1',
         type: 'titipan',
-        amount: 50000,
+        amount: -50000,
         item_name: 'Makan Bersama',
         note: '',
         occurred_at: new Date().toISOString(),
@@ -125,7 +125,7 @@ describe('UI Component Integration Tests', () => {
         client_id: 'c-2',
         wallet_id: 'w-1',
         type: 'koreksi',
-        amount: -10000,
+        amount: 10000,
         item_name: 'Makan Bersama',
         note: 'Koreksi: salah harga',
         corrects_entry_id: 'orig-1',

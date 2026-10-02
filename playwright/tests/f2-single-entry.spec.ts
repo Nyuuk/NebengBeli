@@ -77,7 +77,7 @@ test.describe('F2: Pencatatan Tunggal per Dompet', () => {
     });
     expect(titipanRes.status()).toBe(201);
     const titipan = (await titipanRes.json()).entry;
-    expect(titipan.amount).toBe(30000);
+    expect(titipan.amount).toBe(-30000);
     expect(titipan.type).toBe('titipan');
 
     // Create topup (20.000)
@@ -89,7 +89,7 @@ test.describe('F2: Pencatatan Tunggal per Dompet', () => {
     });
     expect(topupRes.status()).toBe(201);
     const topup = (await topupRes.json()).entry;
-    expect(topup.amount).toBe(-20000);
+    expect(topup.amount).toBe(20000);
     expect(topup.type).toBe('topup');
   });
 });

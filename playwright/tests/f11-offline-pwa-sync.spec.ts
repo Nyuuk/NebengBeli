@@ -66,7 +66,7 @@ test.describe('F11: PWA, Mode Offline & Antrean Sinkronisasi', () => {
     const statement = await stmtRes.json();
     const serverEntry = statement.entries.find((e: any) => e.item_name === offlineItemName);
     expect(serverEntry).toBeDefined();
-    expect(serverEntry.amount).toBe(18000);
+    expect(serverEntry.amount).toBe(-18000);
   });
 
   test('@ui service worker and PWA manifest are present on the client', async ({
@@ -110,9 +110,9 @@ test.describe('F11: PWA, Mode Offline & Antrean Sinkronisasi', () => {
     // Server returns 200 OK / idempotent response without creating a second entry
     expect(res2.ok()).toBeTruthy();
 
-    // Verify statement still has only 1 entry and total balance is 25.000 (not 50.000)
+    // Verify statement still has only 1 entry and total balance is -25.000 (not -50.000)
     const statement = await (await apiClient.getStatement(walletId)).json();
     expect(statement.summary.entry_count).toBe(1);
-    expect(statement.summary.current_balance).toBe(25000);
+    expect(statement.summary.current_balance).toBe(-25000);
   });
 });

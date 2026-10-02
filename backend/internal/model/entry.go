@@ -19,7 +19,7 @@ type Entry struct {
 	ClientID         uuid.UUID  `json:"client_id"`
 	WalletID         uuid.UUID  `json:"wallet_id"`
 	Type             EntryType  `json:"type"`
-	Amount           int64      `json:"amount"` // Signed BIGINT (e.g., + for titipan/expense, - for topup/settlement)
+	Amount           int64      `json:"amount"` // Signed BIGINT (- for titipan/debit, + for topup/credit)
 	ItemName         string     `json:"item_name"`
 	Note             string     `json:"note"`
 	CorrectsEntryID  *uuid.UUID `json:"corrects_entry_id,omitempty"`

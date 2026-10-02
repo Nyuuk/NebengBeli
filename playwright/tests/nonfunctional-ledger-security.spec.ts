@@ -45,7 +45,7 @@ test.describe('Non-Functional & Core Ledger Rules', () => {
     expect(res2.status()).toBe(201);
 
     const stmt = (await (await apiClient.getStatement(walletId)).json()).summary;
-    expect(stmt.current_balance).toBe(150000000);
+    expect(stmt.current_balance).toBe(-150000000);
   });
 
   test('@api authorization matrix: unauthorized caller is blocked with 401 across all protected routes', async ({
@@ -85,6 +85,6 @@ test.describe('Non-Functional & Core Ledger Rules', () => {
     expect(res.status()).toBe(201);
 
     const entry = (await res.json()).entry;
-    expect(entry.amount).toBe(largeAmount);
+    expect(entry.amount).toBe(-largeAmount);
   });
 });

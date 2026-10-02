@@ -360,7 +360,7 @@ func (r *sqlWalletRepository) GetCreatorWalletsSummary(ctx context.Context, crea
 		LEFT JOIN entries e ON e.wallet_id = w.id
 		WHERE w.creator_id = $1
 		GROUP BY w.id, cu.username, ou.username
-		ORDER BY balance DESC, w.created_at DESC;
+		ORDER BY balance ASC, w.created_at DESC;
 	`
 	rows, err := r.db.QueryContext(ctx, query, creatorID)
 	if err != nil {
@@ -394,8 +394,8 @@ func (r *sqlWalletRepository) GetCreatorWalletsSummary(ctx context.Context, crea
 			archivedCount++
 		} else {
 			activeCount++
-			if w.Balance > 0 {
-				totalOutstanding += w.Balance
+			if w.Balance < 0 {
+				totalOutstanding += -w.Balance
 			}
 		}
 		w.UserRole = "creator"

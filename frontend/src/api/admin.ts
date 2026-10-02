@@ -214,9 +214,9 @@ export async function adminGetBreakdownsAdapterApi(): Promise<AdminBreakdownResp
     const creator = creatorMap[creatorId] ||= { creator_id: creatorId, creator_username: wallet.creator_username || 'Unknown', wallet_count: 0, total_titipan_count: 0, total_titipan_volume: 0, total_outstanding_balance: 0 };
     creator.wallet_count++;
     creator.total_titipan_count += wallet.entry_count || 0;
-    if (wallet.balance > 0) {
-      creator.total_outstanding_balance += wallet.balance;
-      creator.total_titipan_volume += wallet.balance;
+    if (wallet.balance < 0) {
+      creator.total_outstanding_balance += -wallet.balance;
+      creator.total_titipan_volume += -wallet.balance;
     }
     return { wallet_id: wallet.id, wallet_name: wallet.name, creator_username: wallet.creator_username || 'Admin', owner_username: wallet.owner_username, balance: wallet.balance || 0, entry_count: wallet.entry_count || 0, is_archived: Boolean(wallet.is_archived), created_at: wallet.created_at };
   });

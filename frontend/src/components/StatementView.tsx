@@ -219,7 +219,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                             variant="body2"
                             sx={{
                               fontWeight: 700,
-                              color: (e.effective_amount || 0) > 0 ? '#d32f2f' : '#2e7d32',
+                              color: (e.effective_amount || 0) < 0 ? '#d32f2f' : '#2e7d32',
                             }}
                           >
                             {(e.effective_amount || 0) > 0
@@ -232,7 +232,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                           variant="body2"
                           sx={{
                             fontWeight: 700,
-                            color: e.amount > 0 ? '#d32f2f' : '#2e7d32',
+                            color: e.amount < 0 ? '#d32f2f' : '#2e7d32',
                           }}
                         >
                           {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}

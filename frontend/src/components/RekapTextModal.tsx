@@ -122,7 +122,9 @@ export function generateRekapText(
         sign = '-';
       } else if (e.type === 'koreksi') {
         typeStr = 'Koreksi';
-        sign = e.amount >= 0 ? '+' : '-';
+        // A positive delta now means the debt went down (titipan corrected lower, or
+        // topup corrected higher), so it reads like a payment ('-') on the tab.
+        sign = e.amount >= 0 ? '-' : '+';
       }
 
       const noteStr = e.note ? ` (${e.note})` : '';
@@ -140,7 +142,7 @@ export function generateRekapText(
 
   lines.push('────────────────────────');
   lines.push(`📊 Total Transaksi Periode Ini: ${totalDelta >= 0 ? '+' : ''}${formatRupiah(totalDelta)}`);
-  lines.push(`🎯 Saldo Akhir: ${formatRupiah(endingBalance)} ${endingBalance > 0 ? '(Tagihan Belum Lunas)' : endingBalance < 0 ? '(Kelebihan Bayar)' : '(Lunas)'}`);
+  lines.push(`🎯 Saldo Akhir: ${formatRupiah(endingBalance)} ${endingBalance < 0 ? '(Tagihan Belum Lunas)' : endingBalance > 0 ? '(Kelebihan Bayar)' : '(Lunas)'}`);
   lines.push('');
   lines.push(`🕒 Dicetak pada: ${new Date().toLocaleString('id-ID')}`);
   lines.push('Aplikasi NebengBeli');
@@ -264,7 +266,7 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
           <Chip
             label={`Saldo Akhir: ${formatRupiah(endingBalance)}`}
             size="small"
-            color={endingBalance > 0 ? 'error' : 'success'}
+            color={endingBalance < 0 ? 'error' : 'success'}
           />
         </Box>
 

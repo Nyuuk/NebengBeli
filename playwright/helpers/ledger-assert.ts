@@ -2,7 +2,7 @@ import { expect } from '@playwright/test';
 
 /**
  * Financial ledger assertions according to NebengBeli PRD core concepts:
- * 1. Balance is sum of all entries: Titipan is debit (-/+, in UI debit is +tagihan or +spending, topup is -tagihan).
+ * 1. Balance is sum of all entries: Titipan is debit (negative), Top-up is credit (positive).
  * 2. Balance invariant: startingBalance + periodDelta === endingBalance.
  * 3. Effective nominal of an entry = original amount + sum(corrections).
  */

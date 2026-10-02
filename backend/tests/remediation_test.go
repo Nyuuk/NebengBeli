@@ -289,7 +289,11 @@ func (m *mockEntryRepo) GetItemSuggestions(ctx context.Context, walletID uuid.UU
 	for _, e := range m.entries {
 		if e.WalletID == walletID && e.Type == model.EntryTypeTitipan {
 			itemCounts[e.ItemName]++
-			itemPrices[e.ItemName] = e.Amount
+			price := e.Amount
+			if price < 0 {
+				price = -price
+			}
+			itemPrices[e.ItemName] = price
 		}
 	}
 	res := make([]model.ItemSuggestion, 0)
@@ -401,8 +405,8 @@ func (m *mockWalletRepo) GetCreatorWalletsSummary(ctx context.Context, creatorID
 				archivedCount++
 			} else {
 				activeCount++
-				if w.Balance > 0 {
-					totalOutstanding += w.Balance
+				if w.Balance < 0 {
+					totalOutstanding += -w.Balance
 				}
 			}
 			wallets = append(wallets, *w)
@@ -1192,8 +1196,8 @@ func TestF1_BatchEntryCreationAndItemSuggestions(t *testing.T) {
 	if resp.Count != 2 {
 		t.Errorf("expected count 2, got %d", resp.Count)
 	}
-	if resp.TotalAmount != 75000 {
-		t.Errorf("expected total amount 75000, got %d", resp.TotalAmount)
+	if resp.TotalAmount != -75000 {
+		t.Errorf("expected total amount -75000, got %d", resp.TotalAmount)
 	}
 
 	// 2. Batch creation rejected if any wallet does not belong to creator
@@ -1297,8 +1301,8 @@ func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected correction creation to succeed, got: %v", err)
 	}
-	if corrEntry.Amount != -10000 {
-		t.Errorf("expected correction delta amount -10000, got %d", corrEntry.Amount)
+	if corrEntry.Amount != 10000 {
+		t.Errorf("expected correction delta amount 10000, got %d", corrEntry.Amount)
 	}
 	if *corrEntry.CorrectsEntryID != origEntry.ID {
 		t.Errorf("expected corrects_entry_id to match original entry ID")
@@ -1315,11 +1319,11 @@ func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected move entry to succeed, got: %v", err)
 	}
-	if srcCorr.Amount != -40000 {
-		t.Errorf("expected source correction amount -40000 (offsetting effective value), got %d", srcCorr.Amount)
+	if srcCorr.Amount != 40000 {
+		t.Errorf("expected source correction amount 40000 (offsetting effective value), got %d", srcCorr.Amount)
 	}
-	if dstNew.Amount != 40000 {
-		t.Errorf("expected destination new entry amount 40000 (preserving effective value), got %d", dstNew.Amount)
+	if dstNew.Amount != -40000 {
+		t.Errorf("expected destination new entry amount -40000 (preserving effective value), got %d", dstNew.Amount)
 	}
 	if dstNew.WalletID != wallet2.ID {
 		t.Errorf("expected target entry in wallet2, got %s", dstNew.WalletID)
@@ -1407,9 +1411,9 @@ func TestF8_CreatorInsightsAndTrends(t *testing.T) {
 
 	creatorID := uuid.New()
 
-	w1 := &model.Wallet{ID: uuid.New(), Name: "Buku 1", CreatorID: creatorID, Balance: 75000}
-	w2 := &model.Wallet{ID: uuid.New(), Name: "Buku 2", CreatorID: creatorID, Balance: 25000}
-	w3 := &model.Wallet{ID: uuid.New(), Name: "Buku 3 Arsip", CreatorID: creatorID, Balance: 50000}
+	w1 := &model.Wallet{ID: uuid.New(), Name: "Buku 1", CreatorID: creatorID, Balance: -75000}
+	w2 := &model.Wallet{ID: uuid.New(), Name: "Buku 2", CreatorID: creatorID, Balance: -25000}
+	w3 := &model.Wallet{ID: uuid.New(), Name: "Buku 3 Arsip", CreatorID: creatorID, Balance: -50000}
 	now := time.Now()
 	w3.ArchivedAt = &now
 

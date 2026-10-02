@@ -29,13 +29,13 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
     client_id: 'c-orig-1',
     wallet_id: 'w-1',
     type: 'titipan',
-    amount: 50000,
+    amount: -50000,
     item_name: 'Nasi Padang Komplit',
     note: 'Rendang',
     occurred_at: '2026-09-30T00:00:00Z',
     created_by: 'creator-1',
     created_at: '2026-09-30T00:00:00Z',
-    effective_amount: 50000,
+    effective_amount: -50000,
   };
 
   it('serializes target_amount, final_nominal, and amount with final nominal semantics (online)', async () => {
@@ -47,7 +47,7 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
         ...baseEntry,
         id: 'corr-id-1',
         type: 'koreksi',
-        amount: -10000, // server returned signed delta
+        amount: 10000, // server returned signed delta
         corrects_entry_id: 'e-orig-1',
         correction_reason: 'Salah Harga',
       },
@@ -100,7 +100,7 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
         ...baseEntry,
         id: 'corr-id-cancel',
         type: 'koreksi',
-        amount: -50000,
+        amount: 50000,
         corrects_entry_id: 'e-orig-1',
         correction_reason: 'Batal',
       },
@@ -175,7 +175,7 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
       client_id: 'off-corr-1',
       wallet_id: 'w-1',
       type: 'koreksi',
-      amount: -15000, // local delta for ledger view
+      amount: 15000, // local delta for ledger view
       target_amount: 35000,
       final_nominal: 35000,
       item_name: 'Nasi Padang Komplit',
@@ -198,7 +198,7 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
         ...baseEntry,
         id: 'server-corr-1',
         type: 'koreksi',
-        amount: -15000,
+        amount: 15000,
       },
       is_duplicate: false,
     });

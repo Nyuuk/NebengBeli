@@ -14,8 +14,8 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
     client_id: 'client-orig-101',
     wallet_id: 'wallet-source',
     type: 'titipan',
-    amount: 35000,
-    effective_amount: 35000,
+    amount: -35000,
+    effective_amount: -35000,
     item_name: 'Bento Ayam',
     note: 'Pedas level 2',
     occurred_at: '2026-09-30T10:00:00Z',
@@ -36,7 +36,7 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
         ...mockTargetEntry,
         id: 'corr-id',
         type: 'koreksi',
-        amount: -35000,
+        amount: 35000,
       },
       new_entry: {
         ...mockTargetEntry,
@@ -81,11 +81,11 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
 
     expect(result.is_offline).toBe(true);
     expect(result.correction_entry?.type).toBe('koreksi');
-    expect(result.correction_entry?.amount).toBe(-35000);
+    expect(result.correction_entry?.amount).toBe(35000);
     expect(result.correction_entry?.wallet_id).toBe('wallet-source');
 
     expect(result.new_entry?.type).toBe('titipan');
-    expect(result.new_entry?.amount).toBe(35000);
+    expect(result.new_entry?.amount).toBe(-35000);
     expect(result.new_entry?.wallet_id).toBe('wallet-target');
 
     // Check queued offline entries in IDB
@@ -95,14 +95,14 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
     const corrPending = pending.find((p) => p.type === 'koreksi');
     expect(corrPending).toBeDefined();
     expect(corrPending?.wallet_id).toBe('wallet-source');
-    expect(corrPending?.amount).toBe(-35000);
+    expect(corrPending?.amount).toBe(35000);
     expect(corrPending?.corrects_entry_id).toBe('entry-orig-101');
     expect(corrPending?.correction_reason).toBe('Salah Dompet');
 
     const newPending = pending.find((p) => p.type === 'titipan');
     expect(newPending).toBeDefined();
     expect(newPending?.wallet_id).toBe('wallet-target');
-    expect(newPending?.amount).toBe(35000);
+    expect(newPending?.amount).toBe(-35000);
     expect(newPending?.item_name).toBe('Bento Ayam');
   });
 });

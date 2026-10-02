@@ -6,7 +6,8 @@ test.describe('F8: Insight Pembuat & Statistik Saldo di Luar', () => {
     authenticatedCreatorPage: page,
     apiClient,
   }) => {
-    // 1. Create two wallets with debts (positive titipan = money owed to creator)
+    // 1. Create two wallets with debts (titipan is stored negative; "money owed to
+    // creator" is reported back to the UI as a positive outstanding total)
     const res1 = await (await apiClient.createWallet(generateUniqueWalletName('Insight A'))).json();
     const w1Id = res1.id || res1.wallet?.id;
     const res2 = await (await apiClient.createWallet(generateUniqueWalletName('Insight B'))).json();

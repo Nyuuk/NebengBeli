@@ -316,7 +316,7 @@ func main() {
 						ClientID:   uuid.New(),
 						WalletID:   wallet.ID,
 						Type:       model.EntryTypeTitipan,
-						Amount:     50000,
+						Amount:     -50000,
 						ItemName:   "Nasi Padang",
 						Note:       "Makan siang bersama",
 						OccurredAt: time.Now().Add(-2 * time.Hour),

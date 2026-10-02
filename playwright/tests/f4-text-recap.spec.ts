@@ -26,7 +26,7 @@ test.describe('F4: Rekap Teks (Export to Text)', () => {
     });
     const e1 = (await e1Res.json()).entry;
 
-    // Top-up: 50.000 (-50.000)
+    // Top-up: 50.000 (+50.000)
     await apiClient.createEntry(walletId, {
       type: 'topup',
       amount: 50000,
@@ -50,7 +50,7 @@ test.describe('F4: Rekap Teks (Export to Text)', () => {
       item_name: item2,
     });
 
-    // Net balance: 35.000 - 50.000 + 20.000 = +5.000
+    // Net balance: -35.000 + 50.000 - 20.000 = -5.000
 
     // 3. Open wallet detail page
     await page.goto(`/wallets/${walletId}`);

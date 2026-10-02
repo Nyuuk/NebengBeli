@@ -1,6 +1,6 @@
 import { test, expect, setupApiRouting, API_URL } from '../fixtures/test-fixtures';
 import { generateUniqueUsername, DEFAULT_PASSWORD } from '../helpers/test-data';
-import { loginViaUI } from '../helpers/auth';
+import { loginViaUI, loginUser, registerUser } from '../helpers/auth';
 import { ensureAdminUserCLI, seedDevFixtures, getDevStatus } from '../helpers/dev-fixtures';
 
 // Against a deployed environment (no /api/dev/* routes), an admin account must already exist
@@ -27,9 +27,8 @@ test.describe('F9: Admin Panel & Read-Only Dashboard', () => {
     // 1. Create a target user whose password will be reset by admin
     const targetUsername = generateUniqueUsername('target_user');
     const regReq = await playwright.request.newContext({ baseURL: API_URL });
-    await regReq.post('/api/auth/register', {
-      data: { username: targetUsername, password: DEFAULT_PASSWORD },
-    });
+    const regRes = await registerUser(regReq, targetUsername, DEFAULT_PASSWORD);
+    expect(regRes.success).toBeTruthy();
     await regReq.dispose();
 
     // 2. Admin logs in via UI
@@ -80,9 +79,8 @@ test.describe('F9: Admin Panel & Read-Only Dashboard', () => {
     creatorUser,
   }) => {
     const userReq = await playwright.request.newContext({ baseURL: API_URL });
-    await userReq.post('/api/auth/login', {
-      data: { username: creatorUser.username, password: creatorUser.password },
-    });
+    const loginRes = await loginUser(userReq, creatorUser.username, creatorUser.password);
+    expect(loginRes.success).toBeTruthy();
 
     const adminRes = await userReq.get('/api/admin/users');
     expect(adminRes.status()).toBe(403);
