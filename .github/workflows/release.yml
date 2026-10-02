@@ -5,6 +5,10 @@ on:
     workflows: ["CI"]
     branches: [main]
     types: [completed]
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -18,7 +22,7 @@ permissions:
 jobs:
   release:
     name: Build, Publish Images & Dispatch Deploy
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -31,6 +35,13 @@ jobs:
         run: |
           FULL_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           TAG="sha-${FULL_SHA}"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TARGET_FOLDER="apps/nebengbeli/production"
+            ROUTE_FILE="apps/http-route/nebengbeli-production.yaml"
+          else
+            TARGET_FOLDER="apps/nebengbeli"
+            ROUTE_FILE="apps/http-route/nebengbeli.yaml"
+          fi
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           
           BACKEND_IMAGE="ghcr.io/${REPO_OWNER}/nebengbeli/backend:${TAG}"
@@ -40,6 +51,8 @@ jobs:
           echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
           echo "backend_image=${BACKEND_IMAGE}" >> $GITHUB_OUTPUT
           echo "frontend_image=${FRONTEND_IMAGE}" >> $GITHUB_OUTPUT
+          echo "target_folder=${TARGET_FOLDER}" >> $GITHUB_OUTPUT
+          echo "route_file=${ROUTE_FILE}" >> $GITHUB_OUTPUT
           
           echo "Resolved Tag: ${TAG}"
           echo "Backend Image: ${BACKEND_IMAGE}"
@@ -111,7 +124,8 @@ jobs:
               }
             };
 
-            console.log(`Dispatching deployment to Nyuuk/kube-config (target_folder: apps/nebengbeli)...`);
+            const targetFolder = '${{ steps.meta.outputs.target_folder }}';
+            console.log(`Dispatching deployment to Nyuuk/kube-config (target_folder: ${targetFolder})...`);
             console.log(`Payload images:`, JSON.stringify(images, null, 2));
 
             await github.rest.repos.createDispatchEvent({
@@ -120,7 +134,7 @@ jobs:
               event_type: 'deploy',
               client_payload: {
                 images: JSON.stringify(images),
-                target_folder: 'apps/nebengbeli'
+                target_folder: targetFolder
               }
             });
 
