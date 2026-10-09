@@ -44,6 +44,11 @@ import {
 } from '../offline/db';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
 import { Wallet, ItemSuggestion, ShoppingSessionRow, BatchEntryItem } from '../types';
+import {
+  getLocalDatetimeInputValue,
+  formatToLocalDatetimeInput,
+  localDatetimeInputToISO,
+} from '../utils/date';
 
 interface ShoppingSessionModalProps {
   open: boolean;
@@ -86,7 +91,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [rows, setRows] = useState<ShoppingSessionRow[]>([emptyRow(), emptyRow()]);
   const [occurredAt, setOccurredAt] = useState<string>(
-    new Date().toISOString().substring(0, 16)
+    getLocalDatetimeInputValue()
   );
   const [suggestionsMap, setSuggestionsMap] = useState<Record<string, ItemSuggestion[]>>({});
   const [hasDraftRestored, setHasDraftRestored] = useState<boolean>(false);
@@ -125,7 +130,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
         if (draft && draft.rows && draft.rows.length > 0) {
           setRows(draft.rows);
           if (draft.occurred_at) {
-            setOccurredAt(draft.occurred_at);
+            setOccurredAt(formatToLocalDatetimeInput(draft.occurred_at));
           }
           setHasDraftRestored(true);
           // Pre-fetch suggestions for used wallets
@@ -226,7 +231,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
     }
 
     setIsSubmitting(true);
-    const occurredDateISO = occurredAt ? new Date(occurredAt).toISOString() : new Date().toISOString();
+    const occurredDateISO = localDatetimeInputToISO(occurredAt);
 
     const batchPayload: BatchEntryItem[] = nonBlankRows.map((r) => ({
       client_id: uuidv4(),

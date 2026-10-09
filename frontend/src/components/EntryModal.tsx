@@ -19,6 +19,7 @@ import { createEntryApi } from '../api/entries';
 import { queueOfflineEntry } from '../offline/db';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
 import { EntryType, Entry } from '../types';
+import { getLocalDatetimeInputValue, localDatetimeInputToISO } from '../utils/date';
 
 interface EntryModalProps {
   open: boolean;
@@ -38,6 +39,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   const [amountStr, setAmountStr] = useState<string>('');
   const [itemName, setItemName] = useState<string>('');
   const [note, setNote] = useState<string>('');
+  const [occurredAt, setOccurredAt] = useState<string>(getLocalDatetimeInputValue());
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -47,6 +49,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
     setItemName('');
     setNote('');
     setType('titipan');
+    setOccurredAt(getLocalDatetimeInputValue());
     onClose();
   };
 
@@ -68,6 +71,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
     const clientId = uuidv4();
     setIsSubmitting(true);
     const now = new Date().toISOString();
+    const occurredDateISO = localDatetimeInputToISO(occurredAt);
 
     if (!isOnline) {
       // Offline mode: Save directly to IndexedDB queue
@@ -79,7 +83,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
           amount: type === 'topup' ? parsedAmount : -parsedAmount,
           item_name: itemName.trim(),
           note: note.trim(),
-          occurred_at: now,
+          occurred_at: occurredDateISO,
           created_at: now,
           retry_count: 0,
         };
@@ -94,7 +98,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
           amount: pendingItem.amount,
           item_name: pendingItem.item_name,
           note: pendingItem.note,
-          occurred_at: now,
+          occurred_at: occurredDateISO,
           created_by: 'me',
           created_at: now,
           created_by_username: 'Anda (Offline)',
@@ -119,7 +123,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
         amount: parsedAmount,
         item_name: itemName.trim(),
         note: note.trim(),
-        occurred_at: now,
+        occurred_at: occurredDateISO,
       });
 
       onSuccess(res.entry, false);
@@ -135,7 +139,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
           amount: type === 'topup' ? parsedAmount : -parsedAmount,
           item_name: itemName.trim(),
           note: note.trim(),
-          occurred_at: now,
+          occurred_at: occurredDateISO,
           created_at: now,
           retry_count: 0,
         };
@@ -150,7 +154,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
           amount: pendingItem.amount,
           item_name: pendingItem.item_name,
           note: pendingItem.note,
-          occurred_at: now,
+          occurred_at: occurredDateISO,
           created_by: 'me',
           created_at: now,
           created_by_username: 'Anda (Offline)',
@@ -228,6 +232,15 @@ export const EntryModal: React.FC<EntryModalProps> = ({
               placeholder="Contoh: Nasi Padang Paket Rendang"
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
+            />
+
+            <TextField
+              label="Waktu Transaksi"
+              type="datetime-local"
+              fullWidth
+              value={occurredAt}
+              onChange={(e) => setOccurredAt(e.target.value)}
+              InputLabelProps={{ shrink: true }}
             />
 
             <TextField

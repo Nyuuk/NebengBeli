@@ -732,4 +732,64 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
       expect(handleClose).toHaveBeenCalled();
     });
   });
+
+  it('initializes datetime input with browser-local time and accurately submits ISO timestamp', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockResolvedValue({
+      entries: [],
+      count: 1,
+    });
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    const timeInput = screen.getByLabelText('Waktu Belanja') as HTMLInputElement;
+    expect(timeInput).toBeDefined();
+    expect(timeInput.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+
+    // Set a custom local time
+    fireEvent.change(timeInput, { target: { value: '2026-10-15T14:30' } });
+
+    // Row 1 - valid
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.change(itemInput1, { target: { value: 'Kopi Kenangan' } });
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' });
+    fireEvent.change(amountInput1, { target: { value: '20000' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    const expectedISO = new Date(2026, 9, 15, 14, 30, 0, 0).toISOString();
+
+    await waitFor(() => {
+      expect(batchSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            wallet_id: 'w-1',
+            item_name: 'Kopi Kenangan',
+            amount: 20000,
+            occurred_at: expectedISO,
+          }),
+        ])
+      );
+      expect(handleSuccess).toHaveBeenCalledWith(1, false);
+    });
+  });
 });

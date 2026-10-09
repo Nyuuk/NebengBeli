@@ -1,10 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { EntryModal } from '../components/EntryModal';
 import { CorrectionModal } from '../components/CorrectionModal';
 import { UnlinkWalletModal } from '../components/UnlinkWalletModal';
 import { CreatorInsightsCard } from '../components/CreatorInsightsCard';
 import { StatementView } from '../components/StatementView';
 import { OnlineStatusProvider } from '../context/OnlineStatusContext';
+import * as entriesApi from '../api/entries';
+import { clearAllOfflineEntries, getPendingOfflineEntries, resetDBInstance } from '../offline/db';
 import { Entry, Wallet, CreatorInsights } from '../types';
 
 describe('UI Component Integration Tests', () => {
@@ -150,5 +153,201 @@ describe('UI Component Integration Tests', () => {
 
     // Shows original struck-through and effective amount +40.000
     expect(screen.getByText('Ada 1 koreksi')).toBeDefined();
+  });
+
+  describe('EntryModal datetime-local & occurred_at behavior', () => {
+    beforeEach(async () => {
+      resetDBInstance();
+      await clearAllOfflineEntries();
+      vi.restoreAllMocks();
+    });
+
+    it('initializes Waktu Transaksi with browser-local datetime format', () => {
+      render(
+        <OnlineStatusProvider>
+          <EntryModal
+            open={true}
+            walletId="w-1"
+            onClose={() => {}}
+            onSuccess={() => {}}
+          />
+        </OnlineStatusProvider>
+      );
+
+      const timeInput = screen.getByLabelText('Waktu Transaksi') as HTMLInputElement;
+      expect(timeInput).toBeDefined();
+      expect(timeInput.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    });
+
+    it('submits selected occurred_at accurately to API in online mode', async () => {
+      const handleSuccess = vi.fn();
+      const handleClose = vi.fn();
+
+      const createSpy = vi.spyOn(entriesApi, 'createEntryApi').mockResolvedValue({
+        entry: {
+          id: 'server-entry-1',
+          client_id: 'client-1',
+          wallet_id: 'w-1',
+          type: 'titipan',
+          amount: -25000,
+          item_name: 'Nasi Padang',
+          note: 'Bungkus',
+          occurred_at: new Date(2026, 9, 20, 12, 30, 0, 0).toISOString(),
+          created_by: 'me',
+          created_at: new Date().toISOString(),
+        },
+        is_duplicate: false,
+      });
+
+      render(
+        <OnlineStatusProvider>
+          <EntryModal
+            open={true}
+            walletId="w-1"
+            onClose={handleClose}
+            onSuccess={handleSuccess}
+          />
+        </OnlineStatusProvider>
+      );
+
+      const amountInput = screen.getByLabelText(/Nominal/i);
+      fireEvent.change(amountInput, { target: { value: '25000' } });
+
+      const itemInput = screen.getByLabelText(/Nama Barang/i);
+      fireEvent.change(itemInput, { target: { value: 'Nasi Padang' } });
+
+      const noteInput = screen.getByLabelText(/Catatan Tambahan/i);
+      fireEvent.change(noteInput, { target: { value: 'Bungkus' } });
+
+      const timeInput = screen.getByLabelText(/Waktu Transaksi/i);
+      fireEvent.change(timeInput, { target: { value: '2026-10-20T12:30' } });
+
+      const submitBtn = screen.getByRole('button', { name: 'Simpan Entri' });
+      fireEvent.click(submitBtn);
+
+      const expectedISO = new Date(2026, 9, 20, 12, 30, 0, 0).toISOString();
+
+      await waitFor(() => {
+        expect(createSpy).toHaveBeenCalledWith(
+          'w-1',
+          expect.objectContaining({
+            amount: 25000,
+            item_name: 'Nasi Padang',
+            note: 'Bungkus',
+            occurred_at: expectedISO,
+          })
+        );
+        expect(handleSuccess).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'server-entry-1' }),
+          false
+        );
+        expect(handleClose).toHaveBeenCalled();
+      });
+    });
+
+    it('queues offline entry with selected occurred_at in offline mode', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+      const handleSuccess = vi.fn();
+      const handleClose = vi.fn();
+
+      render(
+        <OnlineStatusProvider>
+          <EntryModal
+            open={true}
+            walletId="w-1"
+            onClose={handleClose}
+            onSuccess={handleSuccess}
+          />
+        </OnlineStatusProvider>
+      );
+
+      const amountInput = screen.getByLabelText(/Nominal/i);
+      fireEvent.change(amountInput, { target: { value: '35000' } });
+
+      const itemInput = screen.getByLabelText(/Nama Barang/i);
+      fireEvent.change(itemInput, { target: { value: 'Ayam Goreng' } });
+
+      const timeInput = screen.getByLabelText(/Waktu Transaksi/i);
+      fireEvent.change(timeInput, { target: { value: '2026-10-22T15:45' } });
+
+      const submitBtn = screen.getByRole('button', { name: 'Simpan Entri' });
+      fireEvent.click(submitBtn);
+
+      const expectedISO = new Date(2026, 9, 22, 15, 45, 0, 0).toISOString();
+
+      await waitFor(async () => {
+        const pending = await getPendingOfflineEntries();
+        expect(pending.length).toBe(1);
+        expect(pending[0].amount).toBe(-35000);
+        expect(pending[0].item_name).toBe('Ayam Goreng');
+        expect(pending[0].occurred_at).toBe(expectedISO);
+
+        expect(handleSuccess).toHaveBeenCalledWith(
+          expect.objectContaining({
+            amount: -35000,
+            item_name: 'Ayam Goreng',
+            occurred_at: expectedISO,
+            is_offline_pending: true,
+          }),
+          true
+        );
+        expect(handleClose).toHaveBeenCalled();
+      });
+    });
+
+    it('falls back to offline queue with selected occurred_at on network failure (status: 0)', async () => {
+      const handleSuccess = vi.fn();
+      const handleClose = vi.fn();
+
+      vi.spyOn(entriesApi, 'createEntryApi').mockRejectedValue({
+        status: 0,
+        message: 'Network offline failure',
+      });
+
+      render(
+        <OnlineStatusProvider>
+          <EntryModal
+            open={true}
+            walletId="w-1"
+            onClose={handleClose}
+            onSuccess={handleSuccess}
+          />
+        </OnlineStatusProvider>
+      );
+
+      const amountInput = screen.getByLabelText(/Nominal/i);
+      fireEvent.change(amountInput, { target: { value: '18000' } });
+
+      const itemInput = screen.getByLabelText(/Nama Barang/i);
+      fireEvent.change(itemInput, { target: { value: 'Es Teh Manis' } });
+
+      const timeInput = screen.getByLabelText(/Waktu Transaksi/i);
+      fireEvent.change(timeInput, { target: { value: '2026-10-25T08:00' } });
+
+      const submitBtn = screen.getByRole('button', { name: 'Simpan Entri' });
+      fireEvent.click(submitBtn);
+
+      const expectedISO = new Date(2026, 9, 25, 8, 0, 0, 0).toISOString();
+
+      await waitFor(async () => {
+        const pending = await getPendingOfflineEntries();
+        expect(pending.length).toBe(1);
+        expect(pending[0].amount).toBe(-18000);
+        expect(pending[0].item_name).toBe('Es Teh Manis');
+        expect(pending[0].occurred_at).toBe(expectedISO);
+
+        expect(handleSuccess).toHaveBeenCalledWith(
+          expect.objectContaining({
+            amount: -18000,
+            item_name: 'Es Teh Manis',
+            occurred_at: expectedISO,
+            is_offline_pending: true,
+          }),
+          true
+        );
+        expect(handleClose).toHaveBeenCalled();
+      });
+    });
   });
 });
