@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nebengbeli-cache-v1';
+const CACHE_NAME = 'nebengbeli-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -43,39 +43,50 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // 1. Navigation requests and /index.html: Network-First strategy
+  // Never use Stale-While-Revalidate for index.html / navigations so users always get the latest bundle hash
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put('/index.html', responseToCache);
+              if (url.pathname === '/') {
+                cache.put('/', networkResponse.clone());
+              }
+            });
+            return networkResponse;
+          }
+          // Fallback to cache if server responded with an error (502, 503, etc.)
+          return caches.match('/index.html').then((cached) => cached || networkResponse);
+        })
+        .catch(() => {
+          // Fallback to cached index.html when offline or on network failure
+          return caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
+  // 2. Static hashed assets (/assets/), icons, manifest, and svg: Cache-First strategy
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Return cached version and fetch update in background
-        fetch(event.request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, networkResponse);
-              });
-            }
-          })
-          .catch(() => {});
         return cachedResponse;
       }
 
-      return fetch(event.request)
-        .then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-          return response;
-        })
-        .catch(() => {
-          // If offline and request is navigation, return cached index.html
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
+      return fetch(event.request).then((networkResponse) => {
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+          return networkResponse;
+        }
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseToCache);
         });
+        return networkResponse;
+      });
     })
   );
 });
