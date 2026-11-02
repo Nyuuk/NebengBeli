@@ -16,8 +16,12 @@ import {
   clearShoppingDraft,
   clearAllOfflineEntries,
   resetDBInstance,
+  setCachedUser,
+  getCachedUser,
+  clearCachedUser,
+  sanitizeUser,
 } from '../offline/db';
-import { PendingOfflineEntry, Wallet, StatementResponse, ItemSuggestion, ShoppingSessionDraft } from '../types';
+import { PendingOfflineEntry, Wallet, StatementResponse, ItemSuggestion, ShoppingSessionDraft, User } from '../types';
 
 describe('IndexedDB Offline DB & Cache Management', () => {
   beforeEach(async () => {
@@ -178,5 +182,44 @@ describe('IndexedDB Offline DB & Cache Management', () => {
     await clearShoppingDraft();
     const afterClear = await getShoppingDraft();
     expect(afterClear).toBeNull();
+  });
+
+  it('should cache, retrieve, and clear user session without leaking sensitive credentials', async () => {
+    await clearCachedUser();
+    expect(await getCachedUser()).toBeNull();
+
+    const mockUser: User & { password?: string; token?: string } = {
+      id: 'usr-12345',
+      username: 'khafabi_dev',
+      role: 'admin',
+      created_at: '2026-01-01T00:00:00Z',
+      needs_username_update: false,
+      password: 'super-secret-password-should-not-persist',
+      token: 'jwt-secret-token',
+    };
+
+    // Sanitize check
+    const sanitized = sanitizeUser(mockUser as User);
+    expect(sanitized.id).toBe('usr-12345');
+    expect(sanitized.username).toBe('khafabi_dev');
+    expect(sanitized.role).toBe('admin');
+    expect((sanitized as unknown as Record<string, unknown>).password).toBeUndefined();
+    expect((sanitized as unknown as Record<string, unknown>).token).toBeUndefined();
+
+    // Cache user
+    await setCachedUser(mockUser as User);
+
+    // Retrieve cached user
+    const retrieved = await getCachedUser();
+    expect(retrieved).not.toBeNull();
+    expect(retrieved?.id).toBe('usr-12345');
+    expect(retrieved?.username).toBe('khafabi_dev');
+    expect(retrieved?.role).toBe('admin');
+    expect((retrieved as unknown as Record<string, unknown>)?.password).toBeUndefined();
+    expect((retrieved as unknown as Record<string, unknown>)?.token).toBeUndefined();
+
+    // Clear user
+    await clearCachedUser();
+    expect(await getCachedUser()).toBeNull();
   });
 });

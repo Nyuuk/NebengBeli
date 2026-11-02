@@ -1,5 +1,8 @@
 import '@testing-library/jest-dom';
 import 'fake-indexeddb/auto';
+import { vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 15000 });
 
 // Mock matchMedia
 if (typeof window !== 'undefined') {

@@ -6,6 +6,7 @@ import {
   ItemSuggestion,
   CreatorInsights,
   ShoppingSessionDraft,
+  User,
 } from '../types';
 
 interface CachedWalletRecord {
@@ -45,6 +46,12 @@ interface ShoppingDraftRecord {
   updated_at: string;
 }
 
+export interface CachedUserRecord {
+  id: string;
+  user: User;
+  cached_at: string;
+}
+
 interface NebengBeliDB extends DBSchema {
   offline_entries: {
     key: string;
@@ -76,10 +83,14 @@ interface NebengBeliDB extends DBSchema {
     key: string;
     value: ShoppingDraftRecord;
   };
+  cached_user: {
+    key: string;
+    value: CachedUserRecord;
+  };
 }
 
 const DB_NAME = 'nebengbeli_offline_db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let dbPromise: Promise<IDBPDatabase<NebengBeliDB>> | null = null;
 let activeUserId: string | null = null;
@@ -93,6 +104,9 @@ export function getCurrentUserId(): string | null {
 }
 
 export function getDB(): Promise<IDBPDatabase<NebengBeliDB>> {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB is not available in this environment'));
+  }
   if (!dbPromise) {
     dbPromise = openDB<NebengBeliDB>(DB_NAME, DB_VERSION, {
       upgrade(db, _oldVersion, _newVersion, transaction) {
@@ -128,6 +142,9 @@ export function getDB(): Promise<IDBPDatabase<NebengBeliDB>> {
         }
         if (!db.objectStoreNames.contains('shopping_draft')) {
           db.createObjectStore('shopping_draft', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('cached_user')) {
+          db.createObjectStore('cached_user', { keyPath: 'id' });
         }
       },
     });
@@ -466,5 +483,99 @@ export async function clearShoppingDraft(userId?: string): Promise<void> {
     }
   } catch {
     // Ignore error
+  }
+}
+
+// ================= User Session Cache Operations =================
+
+const USER_CACHE_STORAGE_KEY = 'nebengbeli_cached_user';
+const CURRENT_USER_RECORD_KEY = 'current_session';
+
+/**
+ * Sanitizes user profile to ensure only public fields are cached,
+ * never storing passwords, secret credentials, or session tokens.
+ */
+export function sanitizeUser(user: User): User {
+  const sanitized: User = {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    created_at: user.created_at,
+    ...(user.needs_username_update !== undefined ? { needs_username_update: user.needs_username_update } : {}),
+  };
+  const raw = user as unknown as Record<string, unknown>;
+  if (raw.claimed_username !== undefined) {
+    (sanitized as unknown as Record<string, unknown>).claimed_username = raw.claimed_username;
+  }
+  return sanitized;
+}
+
+export async function setCachedUser(user: User): Promise<void> {
+  const sanitized = sanitizeUser(user);
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      const db = await getDB();
+      await db.put('cached_user', {
+        id: CURRENT_USER_RECORD_KEY,
+        user: sanitized,
+        cached_at: new Date().toISOString(),
+      });
+    } catch {
+      // Ignore IndexedDB error
+    }
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(USER_CACHE_STORAGE_KEY, JSON.stringify(sanitized));
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+export async function getCachedUser(): Promise<User | null> {
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      const db = await getDB();
+      const record = await db.get('cached_user', CURRENT_USER_RECORD_KEY);
+      if (record?.user) {
+        return record.user;
+      }
+    } catch {
+      // Ignore IndexedDB error
+    }
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const stored = window.localStorage.getItem(USER_CACHE_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored) as User;
+      }
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+
+  return null;
+}
+
+export async function clearCachedUser(): Promise<void> {
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      const db = await getDB();
+      await db.delete('cached_user', CURRENT_USER_RECORD_KEY);
+    } catch {
+      // Ignore IndexedDB error
+    }
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(USER_CACHE_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore localStorage errors
   }
 }
