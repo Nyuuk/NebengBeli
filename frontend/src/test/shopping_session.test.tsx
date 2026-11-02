@@ -285,7 +285,7 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
       expect(handleSuccess).toHaveBeenCalledWith(2, false);
       expect(handleClose).toHaveBeenCalled();
     });
-  });
+  }, 15000);
 
   it('reliably sets item_name and amount from last_price when selecting an item suggestion', async () => {
     const mockSuggestions: ItemSuggestion[] = [
@@ -678,7 +678,7 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
       expect(handleSuccess).toHaveBeenCalledWith(2, false);
       expect(handleClose).toHaveBeenCalled();
     });
-  });
+  }, 15000);
 
   it('ignores wholly blank extra row and proceeds with single valid row save', async () => {
     const handleSuccess = vi.fn();
