@@ -10,16 +10,35 @@ import {
 import { BatchEntryItem } from '../types';
 
 let isSyncRunning = false;
+let consecutiveSyncFailures = 0;
+let nextSyncAllowedAt = 0;
+
+export function resetSyncCooldown(): void {
+  isSyncRunning = false;
+  consecutiveSyncFailures = 0;
+  nextSyncAllowedAt = 0;
+}
+
+export function getSyncCooldownState(): { isSyncRunning: boolean; consecutiveSyncFailures: number; nextSyncAllowedAt: number } {
+  return { isSyncRunning, consecutiveSyncFailures, nextSyncAllowedAt };
+}
 
 export async function syncOfflineQueue(
   userId?: string,
-  onProgress?: (synced: number, total: number) => void
+  onProgress?: (synced: number, total: number) => void,
+  force = false
 ): Promise<{ synced: number; failed: number }> {
   if (isSyncRunning) {
     return { synced: 0, failed: 0 };
   }
 
+  // Throttle automatic retries when server is down or unreachable
+  if (!force && Date.now() < nextSyncAllowedAt) {
+    return { synced: 0, failed: 0 };
+  }
+
   isSyncRunning = true;
+  let serverDownError = false;
   try {
     const targetUser = userId !== undefined ? userId : getCurrentUserId();
     const rawPending = await getPendingOfflineEntries(targetUser || undefined);
@@ -66,7 +85,20 @@ export async function syncOfflineQueue(
       } catch (batchErr: unknown) {
         if (isOfflineOrServerDown(batchErr)) {
           console.warn('Batch sync aborted: server is down or client is offline', batchErr);
-          window.dispatchEvent(new CustomEvent('nebengbeli:synced', { detail: { synced, failed: pending.length - synced } }));
+          consecutiveSyncFailures++;
+          const delay = Math.min(60000, 2000 * Math.pow(2, Math.min(consecutiveSyncFailures - 1, 5)));
+          nextSyncAllowedAt = Date.now() + delay;
+
+          window.dispatchEvent(
+            new CustomEvent('nebengbeli:synced', {
+              detail: {
+                synced,
+                failed: pending.length - synced,
+                serverDown: true,
+                hasPermanentFailure: false,
+              },
+            })
+          );
           return { synced, failed: pending.length - synced };
         }
         // If batch fails (e.g. payload rejection), fallback to sequential single entry processing
@@ -121,13 +153,32 @@ export async function syncOfflineQueue(
           item.retry_count = (item.retry_count || 0) + 1;
           await queueOfflineEntry(item, item.user_id);
           failed++;
+          serverDownError = true;
           break; // Stop loop if network is unreachable
         }
       }
     }
 
+    if (serverDownError) {
+      consecutiveSyncFailures++;
+      const delay = Math.min(60000, 2000 * Math.pow(2, Math.min(consecutiveSyncFailures - 1, 5)));
+      nextSyncAllowedAt = Date.now() + delay;
+    } else if (synced > 0) {
+      consecutiveSyncFailures = 0;
+      nextSyncAllowedAt = 0;
+    }
+
     // Dispatch global event so views know sync finished
-    window.dispatchEvent(new CustomEvent('nebengbeli:synced', { detail: { synced, failed } }));
+    window.dispatchEvent(
+      new CustomEvent('nebengbeli:synced', {
+        detail: {
+          synced,
+          failed,
+          serverDown: serverDownError,
+          hasPermanentFailure: failed > 0 && !serverDownError,
+        },
+      })
+    );
 
     return { synced, failed };
   } finally {

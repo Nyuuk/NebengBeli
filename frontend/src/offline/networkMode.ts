@@ -125,7 +125,7 @@ export function initOfflineNetworkSeam(): void {
       setOffline: (offline: boolean) => setSimulatedOffline(offline),
       isOffline: () => !isAppOnline(),
       isSimulatedOffline: () => isSimulatedOffline(),
-      syncNow: () => syncOfflineQueue(),
+      syncNow: () => syncOfflineQueue(undefined, undefined, true),
       getPendingCount: () => getPendingOfflineCount(),
       resetOfflineState: () => setSimulatedOffline(false),
     };

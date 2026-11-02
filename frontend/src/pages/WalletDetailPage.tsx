@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -93,9 +93,44 @@ export const WalletDetailPage: React.FC = () => {
 
   // Actions menu
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const isFetchingRef = useRef<boolean>(false);
+
+  const refreshPendingOnly = useCallback(async () => {
+    if (!id) return;
+    const effectiveUserId = user?.id || getCurrentUserId() || undefined;
+    try {
+      const pending = await getPendingOfflineEntriesByWallet(id, effectiveUserId);
+      const pendingEntries: Entry[] = pending.map((p) => ({
+        id: p.client_id,
+        client_id: p.client_id,
+        wallet_id: p.wallet_id,
+        type: p.type,
+        amount: p.amount,
+        item_name: p.item_name,
+        note: p.note,
+        corrects_entry_id: p.corrects_entry_id,
+        correction_reason: p.correction_reason,
+        occurred_at: p.occurred_at,
+        created_by: 'me',
+        created_at: p.created_at,
+        created_by_username: 'Anda (Offline)',
+        is_offline_pending: p.status === 'pending' || !p.status,
+        is_offline_failed: p.status === 'failed',
+        offline_error: p.error_message,
+      }));
+
+      setEntries((prev) => {
+        const serverEntries = prev.filter((e) => !e.is_offline_pending && !e.is_offline_failed);
+        return [...pendingEntries, ...serverEntries];
+      });
+    } catch (err) {
+      console.warn('[WalletDetailPage] Failed to refresh pending entries from IDB:', err);
+    }
+  }, [id, user?.id]);
 
   const fetchWalletData = useCallback(async () => {
-    if (!id) return;
+    if (!id || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       setLoading(true);
       setError(null);
@@ -237,6 +272,7 @@ export const WalletDetailPage: React.FC = () => {
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal memuat data buku ledger.');
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
     }
   }, [id, page, isOnline, user?.id]);
@@ -247,14 +283,35 @@ export const WalletDetailPage: React.FC = () => {
 
   // Listen for sync completion event
   useEffect(() => {
-    const handleSynced = () => {
-      fetchWalletData();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleSynced = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // If server is down or 0 items were synced, DO NOT hit server statement API
+      if (!detail || detail.synced <= 0) {
+        if (detail?.hasPermanentFailure) {
+          refreshPendingOnly();
+        }
+        return;
+      }
+
+      // If items were successfully synced, debounce fetchWalletData to avoid rapid repeated calls
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        fetchWalletData();
+      }, 300);
     };
+
     window.addEventListener('nebengbeli:synced', handleSynced);
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       window.removeEventListener('nebengbeli:synced', handleSynced);
     };
-  }, [fetchWalletData]);
+  }, [fetchWalletData, refreshPendingOnly]);
 
   const handleEntrySuccess = (newEntry: Entry, isOffline?: boolean) => {
     setEntries((prev) => [newEntry, ...prev]);
@@ -295,7 +352,7 @@ export const WalletDetailPage: React.FC = () => {
       await retryFailedOfflineEntry(entry.client_id);
       await refreshPendingCount();
       if (isOnline) {
-        triggerSync();
+        triggerSync({ force: true });
       }
       fetchWalletData();
     } catch (err: unknown) {
@@ -341,7 +398,7 @@ export const WalletDetailPage: React.FC = () => {
       setOpenMoveFailedModal(false);
       setSelectedFailedEntry(null);
       if (isOnline) {
-        triggerSync();
+        triggerSync({ force: true });
       }
       fetchWalletData();
     } catch (err: unknown) {

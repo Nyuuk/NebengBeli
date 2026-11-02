@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Typography,
   Grid,
@@ -66,8 +66,11 @@ export const DashboardPage: React.FC = () => {
   const [targetUsername, setTargetUsername] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const isFetchingRef = useRef<boolean>(false);
 
   const fetchDashboardData = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       setLoading(true);
       setError(null);
@@ -218,6 +221,7 @@ export const DashboardPage: React.FC = () => {
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal memuat data buku titipan.');
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
     }
   }, [isOnline, user?.id]);
@@ -228,14 +232,25 @@ export const DashboardPage: React.FC = () => {
 
   // Foreground auto-refresh & global sync listener
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const handleForeground = () => {
       if (document.visibilityState === 'visible') {
         fetchDashboardData();
       }
     };
 
-    const handleSynced = () => {
-      fetchDashboardData();
+    const handleSynced = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.synced <= 0) {
+        return;
+      }
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        fetchDashboardData();
+      }, 300);
     };
 
     document.addEventListener('visibilitychange', handleForeground);
@@ -243,6 +258,9 @@ export const DashboardPage: React.FC = () => {
     window.addEventListener('nebengbeli:synced', handleSynced);
 
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       document.removeEventListener('visibilitychange', handleForeground);
       window.removeEventListener('focus', handleForeground);
       window.removeEventListener('nebengbeli:synced', handleSynced);

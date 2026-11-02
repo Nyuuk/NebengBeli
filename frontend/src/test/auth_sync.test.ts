@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { syncOfflineQueue } from '../offline/sync';
+import { syncOfflineQueue, resetSyncCooldown } from '../offline/sync';
 import {
   queueOfflineEntry,
   getPendingOfflineCount,
@@ -17,6 +17,7 @@ import { ApiError } from '../api/client';
 
 describe('Auth Renewal & Offline Sync Queue Replay', () => {
   beforeEach(async () => {
+    resetSyncCooldown();
     resetDBInstance();
     await clearAllOfflineEntries();
     await clearShoppingDraft();

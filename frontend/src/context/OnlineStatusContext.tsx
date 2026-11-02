@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getPendingOfflineCount } from '../offline/db';
 import { syncOfflineQueue } from '../offline/sync';
 import { isAppOnline, isSimulatedOffline, setSimulatedOffline } from '../offline/networkMode';
@@ -9,7 +9,7 @@ interface OnlineStatusContextType {
   setSimulatedOffline: (offline: boolean) => void;
   pendingCount: number;
   isSyncing: boolean;
-  triggerSync: () => Promise<void>;
+  triggerSync: (options?: { force?: boolean }) => Promise<void>;
   refreshPendingCount: () => Promise<void>;
 }
 
@@ -21,6 +21,7 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const isMountedRef = useRef(true);
+  const isSyncingRef = useRef(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -40,23 +41,31 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, []);
 
-  const triggerSync = useCallback(async () => {
-    if (!isAppOnline() || isSyncing) return;
+  const triggerSync = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!isAppOnline() || isSyncingRef.current) return;
 
-    try {
-      if (isMountedRef.current) {
-        setIsSyncing(true);
+      try {
+        isSyncingRef.current = true;
+        if (isMountedRef.current) {
+          setIsSyncing(true);
+        }
+        await syncOfflineQueue(undefined, undefined, options?.force);
+        await refreshPendingCount();
+      } catch (err) {
+        console.error('Offline sync encountered error:', err);
+      } finally {
+        isSyncingRef.current = false;
+        if (isMountedRef.current) {
+          setIsSyncing(false);
+        }
       }
-      await syncOfflineQueue();
-      await refreshPendingCount();
-    } catch (err) {
-      console.error('Offline sync encountered error:', err);
-    } finally {
-      if (isMountedRef.current) {
-        setIsSyncing(false);
-      }
-    }
-  }, [isSyncing, refreshPendingCount]);
+    },
+    [refreshPendingCount]
+  );
+
+  const triggerSyncRef = useRef(triggerSync);
+  triggerSyncRef.current = triggerSync;
 
   useEffect(() => {
     const updateStatus = () => {
@@ -65,7 +74,7 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setIsOnline(online);
       setSimOffline(isSimulatedOffline());
       if (online) {
-        triggerSync();
+        triggerSyncRef.current();
       }
     };
 
@@ -84,7 +93,7 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setIsOnline(online);
         setSimOffline(detail.isOffline);
         if (online) {
-          triggerSync();
+          triggerSyncRef.current();
         }
       } else {
         updateStatus();
@@ -95,7 +104,7 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
     window.addEventListener('offline', handleOffline);
     window.addEventListener('nebengbeli:network-mode-change', handleNetworkModeChange);
 
-    // Initial check
+    // Initial check on mount
     refreshPendingCount();
     updateStatus();
 
@@ -104,7 +113,7 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('nebengbeli:network-mode-change', handleNetworkModeChange);
     };
-  }, [refreshPendingCount, triggerSync]);
+  }, [refreshPendingCount]);
 
   const handleSetSimulatedOffline = useCallback((offline: boolean) => {
     setSimulatedOffline(offline);
@@ -112,22 +121,25 @@ export const OnlineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const online = !offline && navigator.onLine;
     setIsOnline(online);
     if (online) {
-      triggerSync();
+      triggerSyncRef.current();
     }
-  }, [triggerSync]);
+  }, []);
+
+  const contextValue = useMemo<OnlineStatusContextType>(
+    () => ({
+      isOnline,
+      isSimulatedOffline: simOffline,
+      setSimulatedOffline: handleSetSimulatedOffline,
+      pendingCount,
+      isSyncing,
+      triggerSync,
+      refreshPendingCount,
+    }),
+    [isOnline, simOffline, handleSetSimulatedOffline, pendingCount, isSyncing, triggerSync, refreshPendingCount]
+  );
 
   return (
-    <OnlineStatusContext.Provider
-      value={{
-        isOnline,
-        isSimulatedOffline: simOffline,
-        setSimulatedOffline: handleSetSimulatedOffline,
-        pendingCount,
-        isSyncing,
-        triggerSync,
-        refreshPendingCount,
-      }}
-    >
+    <OnlineStatusContext.Provider value={contextValue}>
       {children}
     </OnlineStatusContext.Provider>
   );

@@ -43,7 +43,7 @@ export const OfflineBadge: React.FC = () => {
               size="small"
               disabled={isSyncing}
               startIcon={<SyncIcon />}
-              onClick={triggerSync}
+              onClick={() => triggerSync({ force: true })}
             >
               {isSyncing ? 'Menyinkronkan...' : 'Sinkron Sekarang'}
             </Button>
