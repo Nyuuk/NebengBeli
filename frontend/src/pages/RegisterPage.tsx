@@ -33,6 +33,13 @@ export const RegisterPage: React.FC = () => {
     e.preventDefault();
     setError(null);
 
+    const cleanUsername = username.trim();
+    const usernameRegex = /^[a-z0-9_]{3,30}$/;
+    if (!usernameRegex.test(cleanUsername)) {
+      setError('Username hanya boleh 3-30 karakter: huruf kecil (a-z), angka (0-9), dan garis bawah (_), tanpa spasi.');
+      return;
+    }
+
     if (password.length < 6) {
       setError('Password minimal 6 karakter.');
       return;
@@ -45,7 +52,7 @@ export const RegisterPage: React.FC = () => {
 
     setLoading(true);
     try {
-      await register(username.trim(), password);
+      await register(cleanUsername, password);
       navigate('/');
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
@@ -89,7 +96,7 @@ export const RegisterPage: React.FC = () => {
                 placeholder="Contoh: adnan_dev"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                helperText="Hanya huruf, angka, atau underscore."
+                helperText="3-30 karakter: huruf kecil (a-z), angka (0-9), atau garis bawah (_), tanpa spasi."
               />
 
               <TextField

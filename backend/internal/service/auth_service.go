@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ var (
 type AuthService interface {
 	Register(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error)
 	Login(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error)
+	UpdateUsername(ctx context.Context, userID uuid.UUID, newUsername string) (*model.UserResponse, string, time.Time, error)
 	RenewToken(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.UserResponse, string, time.Time, error)
 	Logout(ctx context.Context, userID uuid.UUID) error
 	GetCurrentUser(ctx context.Context, userID uuid.UUID, tokenVersion int) (*model.User, error)
@@ -50,6 +52,17 @@ func NewAuthService(
 }
 
 func (s *authService) Register(ctx context.Context, username, password string) (*model.UserResponse, string, time.Time, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if !model.IsValidUsername(username) {
+		return nil, "", time.Time{}, errors.New("username hanya boleh berisi huruf kecil, angka, dan underscore (3-30 karakter)")
+	}
+
+	// Check for case-insensitive duplicate before creating
+	existingUser, err := s.userRepo.GetByUsername(ctx, username)
+	if err == nil && existingUser != nil {
+		return nil, "", time.Time{}, repository.ErrUsernameDuplicate
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return nil, "", time.Time{}, fmt.Errorf("invalid password: %w", err)
@@ -79,6 +92,63 @@ func (s *authService) Register(ctx context.Context, username, password string) (
 	_ = s.auditRepo.Create(ctx, &model.AuditLog{
 		ActorID:    &user.ID,
 		Action:     string(model.AuditActionUserRegister),
+		TargetType: "user",
+		TargetID:   &entityID,
+		Metadata:   meta,
+	})
+
+	resp := user.ToResponse()
+	return &resp, token, expiresAt, nil
+}
+
+func (s *authService) UpdateUsername(ctx context.Context, userID uuid.UUID, newUsername string) (*model.UserResponse, string, time.Time, error) {
+	newUsername = strings.ToLower(strings.TrimSpace(newUsername))
+	if !model.IsValidUsername(newUsername) {
+		return nil, "", time.Time{}, errors.New("username hanya boleh berisi huruf kecil, angka, dan underscore (3-30 karakter)")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, "", time.Time{}, err
+	}
+
+	if user.Username == newUsername {
+		return nil, "", time.Time{}, errors.New("username baru sama dengan username saat ini")
+	}
+
+	// Business rule (Cara C): Only users with non-standard usernames can claim/update their username
+	if model.IsValidUsername(user.Username) {
+		return nil, "", time.Time{}, errors.New("username yang sudah sesuai standar tidak dapat diubah")
+	}
+
+	// Case-insensitive duplicate check
+	existing, err := s.userRepo.GetByUsername(ctx, newUsername)
+	if err == nil && existing != nil && existing.ID != userID {
+		return nil, "", time.Time{}, repository.ErrUsernameDuplicate
+	}
+
+	oldUsername := user.Username
+	if err := s.userRepo.UpdateUsername(ctx, userID, newUsername); err != nil {
+		return nil, "", time.Time{}, err
+	}
+
+	user.Username = newUsername
+	token, err := s.jwtMgr.GenerateToken(user)
+	if err != nil {
+		return nil, "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(s.jwtMgr.GetTokenDuration())
+
+	// Audit log
+	meta, _ := json.Marshal(map[string]interface{}{
+		"old_username": oldUsername,
+		"new_username": newUsername,
+	})
+	entityID := user.ID.String()
+	_ = s.auditRepo.Create(ctx, &model.AuditLog{
+		ActorID:    &user.ID,
+		Action:     "user_update_username",
 		TargetType: "user",
 		TargetID:   &entityID,
 		Metadata:   meta,

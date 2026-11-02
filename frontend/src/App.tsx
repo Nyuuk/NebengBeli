@@ -12,6 +12,7 @@ import { LinkRequestsPage } from './pages/LinkRequestsPage';
 import { AdminPage } from './pages/AdminPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { ClaimUsernameModal } from './components/ClaimUsernameModal';
 
 const theme = createTheme({
   palette: {
@@ -82,6 +83,7 @@ export const App: React.FC = () => {
       <AuthProvider>
         <OnlineStatusProvider>
           <BrowserRouter>
+            <ClaimUsernameModal />
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />

@@ -450,6 +450,11 @@ type mockUserRepo struct {
 }
 
 func (m *mockUserRepo) Create(ctx context.Context, user *model.User) error {
+	for _, existing := range m.users {
+		if strings.EqualFold(existing.Username, user.Username) {
+			return repository.ErrUsernameDuplicate
+		}
+	}
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()
 	}
@@ -470,7 +475,28 @@ func (m *mockUserRepo) GetByUsername(ctx context.Context, username string) (*mod
 	if u, ok := m.users[username]; ok {
 		return u, nil
 	}
+	for _, u := range m.users {
+		if strings.EqualFold(u.Username, username) {
+			return u, nil
+		}
+	}
 	return nil, repository.ErrUserNotFound
+}
+
+func (m *mockUserRepo) UpdateUsername(ctx context.Context, id uuid.UUID, newUsername string) error {
+	u, ok := m.usersByID[id]
+	if !ok {
+		return repository.ErrUserNotFound
+	}
+	for _, existing := range m.users {
+		if existing.ID != id && strings.EqualFold(existing.Username, newUsername) {
+			return repository.ErrUsernameDuplicate
+		}
+	}
+	delete(m.users, u.Username)
+	u.Username = newUsername
+	m.users[newUsername] = u
+	return nil
 }
 
 func (m *mockUserRepo) IncrementTokenVersion(ctx context.Context, id uuid.UUID) (int, error) {

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User } from '../types';
-import { getMeApi, loginApi, logoutApi, registerApi, renewAuthTokenApi } from '../api/auth';
+import { getMeApi, loginApi, logoutApi, registerApi, renewAuthTokenApi, updateUsernameApi } from '../api/auth';
 import { getPendingOfflineCount, hasShoppingDraft, setCurrentUserId } from '../offline/db';
 
 interface AuthContextType {
@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
+  updateUsername: (newUsername: string) => Promise<void>;
   logout: () => Promise<boolean>;
   refreshUser: () => Promise<void>;
   renewSession: () => Promise<void>;
@@ -101,6 +102,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     lastRenewRef.current = Date.now();
   };
 
+  const updateUsername = async (newUsername: string) => {
+    const res = await updateUsernameApi(newUsername);
+    setUser(res.user);
+    setCurrentUserId(res.user.id);
+    lastRenewRef.current = Date.now();
+  };
+
   const logout = async (): Promise<boolean> => {
     try {
       const pendingCount = await getPendingOfflineCount(user?.id);
@@ -141,6 +149,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        updateUsername,
         logout,
         refreshUser,
         renewSession,

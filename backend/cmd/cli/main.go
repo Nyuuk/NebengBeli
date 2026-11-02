@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -65,6 +66,26 @@ func main() {
 		os.Exit(0)
 	}
 
+	var cleanAdminUsername, adminPassword string
+	if command == "create-admin" {
+		fs := flag.NewFlagSet("create-admin", flag.ExitOnError)
+		username := fs.String("username", "", "Admin username")
+		password := fs.String("password", "", "Admin password (required)")
+		_ = fs.Parse(os.Args[2:])
+
+		cleanAdminUsername = strings.ToLower(strings.TrimSpace(*username))
+		adminPassword = *password
+		if cleanAdminUsername == "" || adminPassword == "" {
+			fmt.Println("Error: --username and --password flags are required.")
+			fs.Usage()
+			os.Exit(1)
+		}
+
+		if !model.IsValidUsername(cleanAdminUsername) {
+			log.Fatalf("Error: username hanya boleh berisi huruf kecil, angka, dan underscore (3-30 karakter)")
+		}
+	}
+
 	cfg := config.LoadConfig()
 
 	db, err := database.Connect(cfg.DatabaseURL)
@@ -90,33 +111,22 @@ func main() {
 		log.Println("Database migration completed successfully.")
 
 	case "create-admin":
-		fs := flag.NewFlagSet("create-admin", flag.ExitOnError)
-		username := fs.String("username", "", "Admin username")
-		password := fs.String("password", "", "Admin password (required)")
-		_ = fs.Parse(os.Args[2:])
-
-		if *username == "" || *password == "" {
-			fmt.Println("Error: --username and --password flags are required.")
-			fs.Usage()
-			os.Exit(1)
-		}
-
-		hash, err := auth.HashPassword(*password)
+		hash, err := auth.HashPassword(adminPassword)
 		if err != nil {
 			log.Fatalf("Failed to hash password: %v", err)
 		}
 
-		existingUser, err := userRepo.GetByUsername(ctx, *username)
+		existingUser, err := userRepo.GetByUsername(ctx, cleanAdminUsername)
 		if err == nil && existingUser != nil {
 			// User exists, promote to admin and update password
 			query := `UPDATE users SET role = 'admin', password_hash = $1, token_version = token_version + 1 WHERE id = $2;`
 			if _, err := db.ExecContext(ctx, query, hash, existingUser.ID); err != nil {
 				log.Fatalf("Failed to promote user to admin: %v", err)
 			}
-			fmt.Printf("User '%s' promoted to admin successfully. Token version incremented.\n", *username)
+			fmt.Printf("User '%s' promoted to admin successfully. Token version incremented.\n", cleanAdminUsername)
 		} else {
 			admin := &model.User{
-				Username:     *username,
+				Username:     cleanAdminUsername,
 				PasswordHash: hash,
 				Role:         model.RoleAdmin,
 				TokenVersion: 1,
@@ -124,7 +134,7 @@ func main() {
 			if err := userRepo.Create(ctx, admin); err != nil {
 				log.Fatalf("Failed to create admin user: %v", err)
 			}
-			fmt.Printf("Admin user '%s' created successfully (ID: %s).\n", *username, admin.ID)
+			fmt.Printf("Admin user '%s' created successfully (ID: %s).\n", cleanAdminUsername, admin.ID)
 		}
 
 	case "users":

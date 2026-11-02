@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/nyuuk/nebengbeli/internal/model"
@@ -58,6 +59,7 @@ func (s *linkService) CreateLinkRequest(ctx context.Context, requestedBy uuid.UU
 		return nil, ErrArchivedWallet
 	}
 
+	targetUsername = strings.TrimSpace(targetUsername)
 	if targetUsername == "" {
 		return nil, errors.New("target username is required")
 	}

@@ -5,6 +5,7 @@ export interface User {
   username: string;
   role: UserRole;
   created_at: string;
+  needs_username_update?: boolean;
 }
 
 export interface Wallet {

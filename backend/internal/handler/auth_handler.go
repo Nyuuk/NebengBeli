@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nyuuk/nebengbeli/internal/config"
 	"github.com/nyuuk/nebengbeli/internal/middleware"
+	"github.com/nyuuk/nebengbeli/internal/repository"
 	"github.com/nyuuk/nebengbeli/internal/service"
 )
 
@@ -33,6 +34,10 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" binding:"required,min=6"`
 }
 
+type UpdateUsernameRequest struct {
+	Username string `json:"username" binding:"required"`
+}
+
 type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
@@ -46,6 +51,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	user, token, expiresAt, err := h.authSvc.Register(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
+		if errors.Is(err, repository.ErrUsernameDuplicate) {
+			c.JSON(http.StatusConflict, gin.H{"error": "username already exists"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -166,6 +175,37 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 	h.clearAuthCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "password reset successfully, please login with your new password"})
+}
+
+func (h *AuthHandler) UpdateUsername(c *gin.Context) {
+	user, ok := middleware.GetCurrentUser(c)
+	if !ok || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	var req UpdateUsernameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedUser, token, expiresAt, err := h.authSvc.UpdateUsername(c.Request.Context(), user.ID, req.Username)
+	if err != nil {
+		if errors.Is(err, repository.ErrUsernameDuplicate) {
+			c.JSON(http.StatusConflict, gin.H{"error": "username sudah digunakan"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.setAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{
+		"user":       updatedUser,
+		"expires_at": expiresAt.Format(time.RFC3339),
+		"message":    "username berhasil diperbarui",
+	})
 }
 
 func (h *AuthHandler) setAuthCookie(c *gin.Context, token string) {

@@ -107,6 +107,7 @@ func main() {
 			authRequired.GET("/auth/renew", authHandler.Renew)
 			authRequired.POST("/auth/reset-password", authHandler.ResetPassword)
 			authRequired.POST("/auth/change-password", authHandler.ChangePassword)
+			authRequired.PUT("/auth/username", authHandler.UpdateUsername)
 
 			// Insights (F8: Total uang saya yang masih di luar, charts & trends)
 			authRequired.GET("/insights", walletHandler.GetInsights)

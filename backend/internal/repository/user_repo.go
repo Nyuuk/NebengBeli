@@ -20,6 +20,7 @@ type UserRepository interface {
 	Create(ctx context.Context, user *model.User) error
 	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
+	UpdateUsername(ctx context.Context, id uuid.UUID, newUsername string) error
 	IncrementTokenVersion(ctx context.Context, id uuid.UUID) (int, error)
 	UpdatePassword(ctx context.Context, id uuid.UUID, newPasswordHash string) error
 	List(ctx context.Context, limit, offset int) ([]model.User, int64, error)
@@ -95,7 +96,9 @@ func (r *sqlUserRepository) GetByUsername(ctx context.Context, username string) 
 	query := `
 		SELECT id, username, password_hash, role, token_version, created_at
 		FROM users
-		WHERE username = $1;
+		WHERE username = $1 OR LOWER(username) = LOWER($1)
+		ORDER BY (CASE WHEN username = $1 THEN 0 ELSE 1 END) ASC
+		LIMIT 1;
 	`
 	user := &model.User{}
 	err := r.db.QueryRowContext(ctx, query, username).Scan(
@@ -113,6 +116,22 @@ func (r *sqlUserRepository) GetByUsername(ctx context.Context, username string) 
 		return nil, fmt.Errorf("failed to get user by username: %w", err)
 	}
 	return user, nil
+}
+
+func (r *sqlUserRepository) UpdateUsername(ctx context.Context, id uuid.UUID, newUsername string) error {
+	query := `
+		UPDATE users
+		SET username = $1
+		WHERE id = $2;
+	`
+	_, err := r.db.ExecContext(ctx, query, newUsername, id)
+	if err != nil {
+		if isDuplicateKeyError(err) {
+			return ErrUsernameDuplicate
+		}
+		return fmt.Errorf("failed to update username: %w", err)
+	}
+	return nil
 }
 
 func (r *sqlUserRepository) IncrementTokenVersion(ctx context.Context, id uuid.UUID) (int, error) {
