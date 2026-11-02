@@ -41,6 +41,7 @@ import {
   getCachedWallets,
   setCachedInsights,
   getCachedInsights,
+  getCurrentUserId,
 } from '../offline/db';
 import { useAuth } from '../context/AuthContext';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
@@ -71,34 +72,131 @@ export const DashboardPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      const effectiveUserId = user?.id || getCurrentUserId() || undefined;
+
       if (isOnline) {
         // Online: Fetch fresh data from APIs
         // getWalletsApi(true) already returns active + archived wallets (archived=true
         // means "include archived", not "archived only"), so a single call covers both;
         // calling it alongside getWalletsApi(false) would double every active wallet.
-        const [allWallets, linkRequests, insightsData] = await Promise.all([
-          getWalletsApi(true).catch(() => []),
+        let onlineWallets: Wallet[] | null = null;
+        let onlineWalletsError: unknown = null;
+        try {
+          onlineWallets = await getWalletsApi(true);
+        } catch (err) {
+          onlineWalletsError = err;
+        }
+
+        const [linkRequests, insightsData] = await Promise.all([
           listLinkRequestsApi().catch(() => []),
           getCreatorInsightsApi().catch(() => null),
         ]);
 
-        setWallets(allWallets);
-        await setCachedWallets(allWallets, 'all');
+        if (onlineWallets !== null) {
+          setWallets(onlineWallets);
+          await setCachedWallets(onlineWallets, 'all', effectiveUserId);
 
-        const pending = (linkRequests || []).filter((r) => r.status === 'pending');
-        setPendingRequestsCount(pending.length);
+          const pending = (linkRequests || []).filter((r) => r.status === 'pending');
+          setPendingRequestsCount(pending.length);
 
-        if (insightsData) {
-          setInsights(insightsData);
-          await setCachedInsights(insightsData);
+          if (insightsData) {
+            setInsights(insightsData);
+            await setCachedInsights(insightsData, 'creator', effectiveUserId);
+          } else {
+            // Compute fallback insights from active creator wallets
+            const creatorWallets = onlineWallets.filter(
+              (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+            );
+            const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
+            const fallbackInsights: CreatorInsights = {
+              total_money_outside: moneyOutside,
+              active_wallets_count: creatorWallets.length,
+              total_wallets_count: onlineWallets.length,
+              total_titipan_volume: creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0),
+              total_titipan_count: creatorWallets.reduce((sum, w) => sum + w.entry_count, 0),
+              daily_trends: [],
+              weekly_trends: [],
+              monthly_trends: [],
+              wallet_balances: creatorWallets.map((w) => ({
+                wallet_id: w.id,
+                wallet_name: w.name,
+                balance: w.balance,
+                owner_username: w.owner_username,
+                is_archived: w.is_archived,
+              })),
+              cached_at: new Date().toISOString(),
+            };
+            setInsights(fallbackInsights);
+            await setCachedInsights(fallbackInsights, 'creator', effectiveUserId);
+          }
+
+          setLastSyncedAt(new Date().toISOString());
         } else {
-          // Compute fallback insights from active creator wallets
-          const creatorWallets = allWallets.filter((w) => !w.is_archived && (w.user_role === 'creator' || w.user_role === 'both' || !w.user_role));
+          // Backend is offline / returned 503 / network error:
+          // FALLBACK to IndexedDB cache! Do NOT set empty array or overwrite cache!
+          console.warn('[DashboardPage] Server offline or request failed, falling back to cache:', onlineWalletsError);
+
+          const cachedWalletsRecord = await getCachedWallets('all', effectiveUserId);
+          if (cachedWalletsRecord && cachedWalletsRecord.wallets) {
+            setWallets(cachedWalletsRecord.wallets);
+            setLastSyncedAt(cachedWalletsRecord.cached_at);
+          } else {
+            setWallets([]);
+            const apiErr = onlineWalletsError as { message?: string };
+            setError(apiErr?.message || 'Gagal memuat data buku titipan (server offline).');
+          }
+
+          const cachedInsightsRecord = await getCachedInsights('creator', effectiveUserId);
+          if (cachedInsightsRecord) {
+            setInsights(cachedInsightsRecord.data);
+          } else if (cachedWalletsRecord?.wallets) {
+            const creatorWallets = cachedWalletsRecord.wallets.filter(
+              (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+            );
+            const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
+            const fallbackInsights: CreatorInsights = {
+              total_money_outside: moneyOutside,
+              active_wallets_count: creatorWallets.length,
+              total_wallets_count: cachedWalletsRecord.wallets.length,
+              total_titipan_volume: creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0),
+              total_titipan_count: creatorWallets.reduce((sum, w) => sum + w.entry_count, 0),
+              daily_trends: [],
+              weekly_trends: [],
+              monthly_trends: [],
+              wallet_balances: creatorWallets.map((w) => ({
+                wallet_id: w.id,
+                wallet_name: w.name,
+                balance: w.balance,
+                owner_username: w.owner_username,
+                is_archived: w.is_archived,
+              })),
+              cached_at: cachedWalletsRecord.cached_at,
+            };
+            setInsights(fallbackInsights);
+          }
+        }
+      } else {
+        // Explicitly offline: Load from IndexedDB cache
+        const cachedWalletsRecord = await getCachedWallets('all', effectiveUserId);
+        if (cachedWalletsRecord) {
+          setWallets(cachedWalletsRecord.wallets);
+          setLastSyncedAt(cachedWalletsRecord.cached_at);
+        } else {
+          setWallets([]);
+        }
+
+        const cachedInsightsRecord = await getCachedInsights('creator', effectiveUserId);
+        if (cachedInsightsRecord) {
+          setInsights(cachedInsightsRecord.data);
+        } else if (cachedWalletsRecord?.wallets) {
+          const creatorWallets = cachedWalletsRecord.wallets.filter(
+            (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+          );
           const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
           const fallbackInsights: CreatorInsights = {
             total_money_outside: moneyOutside,
             active_wallets_count: creatorWallets.length,
-            total_wallets_count: allWallets.length,
+            total_wallets_count: cachedWalletsRecord.wallets.length,
             total_titipan_volume: creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0),
             total_titipan_count: creatorWallets.reduce((sum, w) => sum + w.entry_count, 0),
             daily_trends: [],
@@ -111,24 +209,9 @@ export const DashboardPage: React.FC = () => {
               owner_username: w.owner_username,
               is_archived: w.is_archived,
             })),
-            cached_at: new Date().toISOString(),
+            cached_at: cachedWalletsRecord.cached_at,
           };
           setInsights(fallbackInsights);
-          await setCachedInsights(fallbackInsights);
-        }
-
-        setLastSyncedAt(new Date().toISOString());
-      } else {
-        // Offline: Load from IndexedDB cache
-        const cachedWalletsRecord = await getCachedWallets('all');
-        if (cachedWalletsRecord) {
-          setWallets(cachedWalletsRecord.wallets);
-          setLastSyncedAt(cachedWalletsRecord.cached_at);
-        }
-
-        const cachedInsightsRecord = await getCachedInsights();
-        if (cachedInsightsRecord) {
-          setInsights(cachedInsightsRecord.data);
         }
       }
     } catch (err: unknown) {
@@ -137,7 +220,7 @@ export const DashboardPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isOnline]);
+  }, [isOnline, user?.id]);
 
   useEffect(() => {
     fetchDashboardData();

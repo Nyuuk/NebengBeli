@@ -317,10 +317,11 @@ function getCacheKey(id: string, userId?: string): string {
 export async function setCachedWallets(wallets: Wallet[], scope = 'all', userId?: string): Promise<void> {
   try {
     const db = await getDB();
-    const key = getCacheKey(scope, userId);
+    const effectiveUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(scope, effectiveUserId);
     await db.put('cached_wallets', {
       id: key,
-      user_id: userId || activeUserId || undefined,
+      user_id: effectiveUserId,
       wallets,
       cached_at: new Date().toISOString(),
     });
@@ -332,9 +333,13 @@ export async function setCachedWallets(wallets: Wallet[], scope = 'all', userId?
 export async function getCachedWallets(scope = 'all', userId?: string): Promise<{ wallets: Wallet[]; cached_at: string } | null> {
   try {
     const db = await getDB();
-    const key = getCacheKey(scope, userId);
+    const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(scope, targetUserId);
     let res = await db.get('cached_wallets', key);
-    if (!res && (!userId && !activeUserId)) {
+    if (!res && targetUserId) {
+      res = await db.get('cached_wallets', `default:${scope}`);
+    }
+    if (!res) {
       res = await db.get('cached_wallets', scope);
     }
     if (!res) return null;
@@ -347,11 +352,12 @@ export async function getCachedWallets(scope = 'all', userId?: string): Promise<
 export async function setCachedStatement(walletId: string, data: StatementResponse, userId?: string): Promise<void> {
   try {
     const db = await getDB();
-    const key = getCacheKey(walletId, userId);
+    const effectiveUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(walletId, effectiveUserId);
     await db.put('cached_statements', {
       id: key,
       wallet_id: walletId,
-      user_id: userId || activeUserId || undefined,
+      user_id: effectiveUserId,
       data,
       cached_at: new Date().toISOString(),
     });
@@ -363,9 +369,13 @@ export async function setCachedStatement(walletId: string, data: StatementRespon
 export async function getCachedStatement(walletId: string, userId?: string): Promise<{ data: StatementResponse; cached_at: string } | null> {
   try {
     const db = await getDB();
-    const key = getCacheKey(walletId, userId);
+    const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(walletId, targetUserId);
     let res = await db.get('cached_statements', key);
-    if (!res && (!userId && !activeUserId)) {
+    if (!res && targetUserId) {
+      res = await db.get('cached_statements', `default:${walletId}`);
+    }
+    if (!res) {
       res = await db.get('cached_statements', walletId);
     }
     if (!res) return null;
@@ -378,11 +388,12 @@ export async function getCachedStatement(walletId: string, userId?: string): Pro
 export async function setCachedSuggestions(walletId: string, suggestions: ItemSuggestion[], userId?: string): Promise<void> {
   try {
     const db = await getDB();
-    const key = getCacheKey(walletId, userId);
+    const effectiveUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(walletId, effectiveUserId);
     await db.put('cached_suggestions', {
       id: key,
       wallet_id: walletId,
-      user_id: userId || activeUserId || undefined,
+      user_id: effectiveUserId,
       suggestions,
       cached_at: new Date().toISOString(),
     });
@@ -394,9 +405,13 @@ export async function setCachedSuggestions(walletId: string, suggestions: ItemSu
 export async function getCachedSuggestions(walletId: string, userId?: string): Promise<{ suggestions: ItemSuggestion[]; cached_at: string } | null> {
   try {
     const db = await getDB();
-    const key = getCacheKey(walletId, userId);
+    const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(walletId, targetUserId);
     let res = await db.get('cached_suggestions', key);
-    if (!res && (!userId && !activeUserId)) {
+    if (!res && targetUserId) {
+      res = await db.get('cached_suggestions', `default:${walletId}`);
+    }
+    if (!res) {
       res = await db.get('cached_suggestions', walletId);
     }
     if (!res) return null;
@@ -409,10 +424,11 @@ export async function getCachedSuggestions(walletId: string, userId?: string): P
 export async function setCachedInsights(data: CreatorInsights, id = 'creator', userId?: string): Promise<void> {
   try {
     const db = await getDB();
-    const key = getCacheKey(id, userId);
+    const effectiveUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(id, effectiveUserId);
     await db.put('cached_insights', {
       id: key,
-      user_id: userId || activeUserId || undefined,
+      user_id: effectiveUserId,
       data,
       cached_at: new Date().toISOString(),
     });
@@ -424,9 +440,13 @@ export async function setCachedInsights(data: CreatorInsights, id = 'creator', u
 export async function getCachedInsights(id = 'creator', userId?: string): Promise<{ data: CreatorInsights; cached_at: string } | null> {
   try {
     const db = await getDB();
-    const key = getCacheKey(id, userId);
+    const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
+    const key = getCacheKey(id, targetUserId);
     let res = await db.get('cached_insights', key);
-    if (!res && (!userId && !activeUserId)) {
+    if (!res && targetUserId) {
+      res = await db.get('cached_insights', `default:${id}`);
+    }
+    if (!res) {
       res = await db.get('cached_insights', id);
     }
     if (!res) return null;

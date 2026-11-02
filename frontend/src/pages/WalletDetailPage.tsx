@@ -52,10 +52,11 @@ import {
   moveFailedOfflineEntry,
   retryFailedOfflineEntry,
   getCachedWallets,
+  getCurrentUserId,
 } from '../offline/db';
 import { useAuth } from '../context/AuthContext';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
-import { Wallet, Entry, StatementSummary } from '../types';
+import { Wallet, Entry, StatementSummary, StatementResponse } from '../types';
 
 export const WalletDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -120,34 +121,84 @@ export const WalletDetailPage: React.FC = () => {
         offline_error: p.error_message,
       }));
 
+      const effectiveUserId = user?.id || getCurrentUserId() || undefined;
+
       if (isOnline) {
         // Online: fetch fresh statement
-        const stmt = await getStatementApi(id, { page, limit: 50 });
-        setWallet(stmt.wallet);
+        let stmt: StatementResponse | null = null;
+        let stmtError: unknown = null;
+        try {
+          stmt = await getStatementApi(id, { page, limit: 50 });
+        } catch (err) {
+          stmtError = err;
+        }
 
-        // Adjust summary with unsynced offline entries
-        const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
-        const adjustedSummary: StatementSummary = {
-          ...stmt.summary,
-          current_balance: (stmt.summary?.current_balance || 0) + pendingDelta,
-          entry_count: (stmt.summary?.entry_count || 0) + pendingEntries.length,
-        };
-        setSummary(adjustedSummary);
+        if (stmt) {
+          setWallet(stmt.wallet);
 
-        const stmtEntries = stmt?.entries || [];
-        const stmtTotal = stmt?.total ?? 0;
-        setEntries([...pendingEntries, ...stmtEntries]);
-        setTotalEntries(stmtTotal + pendingEntries.length);
-        setLastSyncedAt(new Date().toISOString());
+          // Adjust summary with unsynced offline entries
+          const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
+          const adjustedSummary: StatementSummary = {
+            ...stmt.summary,
+            current_balance: (stmt.summary?.current_balance || 0) + pendingDelta,
+            entry_count: (stmt.summary?.entry_count || 0) + pendingEntries.length,
+          };
+          setSummary(adjustedSummary);
 
-        // Cache statement in IDB
-        await setCachedStatement(id, {
-          ...stmt,
-          cached_at: new Date().toISOString(),
-        }, user?.id);
+          const stmtEntries = stmt?.entries || [];
+          const stmtTotal = stmt?.total ?? 0;
+          setEntries([...pendingEntries, ...stmtEntries]);
+          setTotalEntries(stmtTotal + pendingEntries.length);
+          setLastSyncedAt(new Date().toISOString());
+
+          // Cache statement in IDB
+          await setCachedStatement(id, {
+            ...stmt,
+            cached_at: new Date().toISOString(),
+          }, effectiveUserId);
+        } else {
+          // Fallback to cache on server error (503 / 500 / network error)
+          console.warn('[WalletDetailPage] Server offline or fetch failed, falling back to cache:', stmtError);
+          const cached = await getCachedStatement(id, effectiveUserId);
+          if (cached?.data) {
+            const cachedStmt = cached.data;
+            setWallet(cachedStmt.wallet);
+
+            const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
+            setSummary({
+              ...cachedStmt.summary,
+              current_balance: (cachedStmt.summary?.current_balance || 0) + pendingDelta,
+              entry_count: (cachedStmt.summary?.entry_count || 0) + pendingEntries.length,
+            });
+
+            setEntries([...pendingEntries, ...(cachedStmt.entries || [])]);
+            setTotalEntries((cachedStmt.total || 0) + pendingEntries.length);
+            setLastSyncedAt(cached.cached_at);
+          } else {
+            // Check if wallet exists in cached wallets list
+            const cachedWalletsRecord = await getCachedWallets('all', effectiveUserId);
+            const foundWallet = cachedWalletsRecord?.wallets.find((w) => w.id === id);
+            if (foundWallet) {
+              setWallet(foundWallet);
+              const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
+              setSummary({
+                total_titipan: 0,
+                total_topup: 0,
+                total_koreksi: 0,
+                current_balance: (foundWallet.balance || 0) + pendingDelta,
+                entry_count: (foundWallet.entry_count || 0) + pendingEntries.length,
+              });
+              setEntries(pendingEntries);
+              setTotalEntries(pendingEntries.length);
+            } else {
+              const apiErr = stmtError as { message?: string };
+              setError(apiErr?.message || 'Data buku ini belum tersedia secara offline.');
+            }
+          }
+        }
       } else {
         // Offline: retrieve from cache
-        const cached = await getCachedStatement(id, user?.id);
+        const cached = await getCachedStatement(id, effectiveUserId);
         if (cached?.data) {
           const cachedStmt = cached.data;
           setWallet(cachedStmt.wallet);
@@ -163,7 +214,23 @@ export const WalletDetailPage: React.FC = () => {
           setTotalEntries((cachedStmt.total || 0) + pendingEntries.length);
           setLastSyncedAt(cached.cached_at);
         } else {
-          setError('Data buku ini belum tersedia secara offline.');
+          const cachedWalletsRecord = await getCachedWallets('all', effectiveUserId);
+          const foundWallet = cachedWalletsRecord?.wallets.find((w) => w.id === id);
+          if (foundWallet) {
+            setWallet(foundWallet);
+            const pendingDelta = pendingEntries.reduce((sum, p) => sum + p.amount, 0);
+            setSummary({
+              total_titipan: 0,
+              total_topup: 0,
+              total_koreksi: 0,
+              current_balance: (foundWallet.balance || 0) + pendingDelta,
+              entry_count: (foundWallet.entry_count || 0) + pendingEntries.length,
+            });
+            setEntries(pendingEntries);
+            setTotalEntries(pendingEntries.length);
+          } else {
+            setError('Data buku ini belum tersedia secara offline.');
+          }
         }
       }
     } catch (err: unknown) {
@@ -239,12 +306,18 @@ export const WalletDetailPage: React.FC = () => {
 
   const handleOpenMoveFailedModal = async (entry: Entry) => {
     setSelectedFailedEntry(entry);
+    const effectiveUserId = user?.id || getCurrentUserId() || undefined;
     try {
       let list: Wallet[] = [];
       if (isOnline) {
-        list = await getWalletsApi(false);
+        try {
+          list = await getWalletsApi(false);
+        } catch {
+          const cached = await getCachedWallets('all', effectiveUserId);
+          list = cached?.wallets || [];
+        }
       } else {
-        const cached = await getCachedWallets('all', user?.id);
+        const cached = await getCachedWallets('all', effectiveUserId);
         list = cached?.wallets || [];
       }
       const valid = list.filter((w) => w.id !== id && !w.is_archived);
