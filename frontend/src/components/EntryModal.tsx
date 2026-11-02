@@ -15,6 +15,7 @@ import {
   InputAdornment,
 } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
+import { isOfflineOrServerDown } from '../api/client';
 import { createEntryApi } from '../api/entries';
 import { queueOfflineEntry } from '../offline/db';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
@@ -129,9 +130,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({
       onSuccess(res.entry, false);
       handleClose();
     } catch (err: unknown) {
-      // If network failure occurs during submit, fallback to offline queue
-      const apiErr = err as { status?: number; message?: string };
-      if (apiErr.status === 0) {
+      // If network failure or server is down during submit, fallback to offline queue
+      if (isOfflineOrServerDown(err)) {
         const pendingItem = {
           client_id: clientId,
           wallet_id: walletId,
@@ -164,6 +164,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
         onSuccess(mockEntry, true);
         handleClose();
       } else {
+        const apiErr = err as { message?: string };
         setError(apiErr.message || 'Gagal menambahkan entri ledger.');
       }
     } finally {

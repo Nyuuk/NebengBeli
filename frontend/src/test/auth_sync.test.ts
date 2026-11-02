@@ -13,6 +13,7 @@ import {
 import * as entriesApi from '../api/entries';
 import * as authApi from '../api/auth';
 import { PendingOfflineEntry } from '../types';
+import { ApiError } from '../api/client';
 
 describe('Auth Renewal & Offline Sync Queue Replay', () => {
   beforeEach(async () => {
@@ -151,5 +152,52 @@ describe('Auth Renewal & Offline Sync Queue Replay', () => {
     }, 'user-warn-1');
 
     expect(await getPendingOfflineCount('user-warn-1')).toBe(1);
+  });
+
+  it('aborts sync without running sequential fallback when batch API returns HTTP 503', async () => {
+    // Queue 2 standard titipan items
+    await queueOfflineEntry({
+      client_id: 'batch-c1',
+      wallet_id: 'w-1',
+      type: 'titipan',
+      amount: 10000,
+      item_name: 'Item 1',
+      note: '',
+      occurred_at: '2026-10-01T10:00:00Z',
+      created_at: '2026-10-01T10:00:00Z',
+      retry_count: 0,
+      status: 'pending',
+    });
+
+    await queueOfflineEntry({
+      client_id: 'batch-c2',
+      wallet_id: 'w-1',
+      type: 'titipan',
+      amount: 20000,
+      item_name: 'Item 2',
+      note: '',
+      occurred_at: '2026-10-01T10:05:00Z',
+      created_at: '2026-10-01T10:05:00Z',
+      retry_count: 0,
+      status: 'pending',
+    });
+
+    expect(await getPendingOfflineCount()).toBe(2);
+
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockRejectedValue(
+      new ApiError('Backend 503 Service Unavailable', 503)
+    );
+    const sequentialSpy = vi.spyOn(entriesApi, 'createEntryApi');
+
+    const result = await syncOfflineQueue();
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    // Must NOT proceed to sequential fallback when server is down
+    expect(sequentialSpy).not.toHaveBeenCalled();
+    expect(result.synced).toBe(0);
+    expect(result.failed).toBe(2);
+
+    // Queue must remain intact for retry
+    expect(await getPendingOfflineCount()).toBe(2);
   });
 });

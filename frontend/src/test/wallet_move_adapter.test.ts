@@ -105,4 +105,41 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
     expect(newPending?.amount).toBe(-35000);
     expect(newPending?.item_name).toBe('Bento Ayam');
   });
+
+  it('decomposes into atomic offline correction and titipan mutations when server returns HTTP 503', async () => {
+    vi.spyOn(clientApi, 'request').mockRejectedValue(
+      new clientApi.ApiError('Backend unavailable: 503 Service Unavailable', 503)
+    );
+
+    const result = await moveEntryAdapter({
+      source_wallet_id: 'wallet-source',
+      target_wallet_id: 'wallet-target',
+      targetEntry: mockTargetEntry,
+      notes: 'Pindah karena server 503',
+      isOnline: true,
+      userId: 'user-ob',
+    });
+
+    expect(result.is_offline).toBe(true);
+    expect(result.correction_entry?.type).toBe('koreksi');
+    expect(result.correction_entry?.amount).toBe(35000);
+    expect(result.correction_entry?.wallet_id).toBe('wallet-source');
+
+    expect(result.new_entry?.type).toBe('titipan');
+    expect(result.new_entry?.amount).toBe(-35000);
+    expect(result.new_entry?.wallet_id).toBe('wallet-target');
+
+    const pending = await getPendingOfflineEntries('user-ob');
+    expect(pending.length).toBe(2);
+
+    const corrPending = pending.find((p) => p.type === 'koreksi');
+    expect(corrPending).toBeDefined();
+    expect(corrPending?.wallet_id).toBe('wallet-source');
+    expect(corrPending?.amount).toBe(35000);
+
+    const newPending = pending.find((p) => p.type === 'titipan');
+    expect(newPending).toBeDefined();
+    expect(newPending?.wallet_id).toBe('wallet-target');
+    expect(newPending?.amount).toBe(-35000);
+  });
 });

@@ -1,4 +1,4 @@
-import { request } from './client';
+import { request, isOfflineOrServerDown } from './client';
 import { Entry, EntryType, BatchEntryItem, BatchCreateEntriesResponse } from '../types';
 import { queueOfflineEntry } from '../offline/db';
 import { v4 as uuidv4 } from 'uuid';
@@ -133,9 +133,8 @@ export async function moveEntryAdapter({
         new_entry: res.new_entry,
       };
     } catch (err: unknown) {
-      const apiErr = err as { status?: number; message?: string };
-      // If network failure / dropped connection, fallback to offline decomposition
-      if (apiErr.status === 0 || !apiErr.status) {
+      // If network failure / server is down (503, 502, 504, 500, 408, 0), fallback to offline decomposition
+      if (isOfflineOrServerDown(err)) {
         return executeOfflineMove(source_wallet_id, target_wallet_id, targetEntry, notes, effectiveAmount, userId);
       }
       throw err;

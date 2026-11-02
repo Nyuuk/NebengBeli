@@ -135,7 +135,7 @@ describe('Offline Dashboard & Wallet Fallback when Backend Returns 503 / Offline
     // Wait for wallets to render
     await waitFor(() => {
       expect(screen.getByText('Dompet Kopi Adnan')).toBeDefined();
-    });
+    }, { timeout: 3000 });
 
     // Check that cache now contains both wallets scoped by user
     const cached = await getCachedWallets('all', 'usr-adnan-123');

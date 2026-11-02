@@ -14,6 +14,17 @@ export class ApiError extends Error {
   }
 }
 
+export function isOfflineOrServerDown(err: unknown): boolean {
+  if (!err) return false;
+  if (!isAppOnline()) return true;
+
+  if (err instanceof ApiError || (typeof err === 'object' && err !== null && 'status' in err)) {
+    const status = (err as { status?: number }).status;
+    return status === 0 || (typeof status === 'number' && (status >= 500 || status === 408));
+  }
+  return false;
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {}

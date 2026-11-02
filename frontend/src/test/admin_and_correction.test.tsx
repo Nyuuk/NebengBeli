@@ -146,6 +146,57 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
     );
   });
 
+  it('falls back to offline queue when server returns HTTP 503 on online correction submit', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+
+    vi.spyOn(entriesApi, 'createEntryApi').mockRejectedValue(
+      new clientModule.ApiError('Backend unavailable: 503 Service Unavailable', 503)
+    );
+
+    render(
+      <OnlineStatusProvider>
+        <CorrectionModal
+          open={true}
+          walletId="w-1"
+          targetEntry={baseEntry}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Click quick reason "Salah Harga"
+    const salahHargaBtns = screen.getAllByRole('button', { name: 'Salah Harga' });
+    fireEvent.click(salahHargaBtns[0]);
+
+    // Change nominal to 30000 (target is 30000, original was 50000, delta = 20000)
+    const input = screen.getByPlaceholderText('0') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '30000' } });
+
+    const submitBtn = screen.getByRole('button', { name: 'Simpan Koreksi' });
+    fireEvent.click(submitBtn);
+
+    await waitFor(async () => {
+      const pending = await getPendingOfflineEntries();
+      expect(pending.length).toBe(1);
+      expect(pending[0].type).toBe('koreksi');
+      expect(pending[0].target_amount).toBe(30000);
+      expect(pending[0].corrects_entry_id).toBe('e-orig-1');
+      expect(pending[0].correction_reason).toBe('Salah Harga');
+
+      expect(handleSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'koreksi',
+          amount: 20000,
+          is_offline_pending: true,
+        }),
+        true
+      );
+      expect(handleClose).toHaveBeenCalled();
+    });
+  });
+
   it('validates and blocks submission when delta is zero', async () => {
     const handleSuccess = vi.fn();
     const handleClose = vi.fn();

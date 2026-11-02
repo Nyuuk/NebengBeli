@@ -32,6 +32,7 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 import { v4 as uuidv4 } from 'uuid';
 
 import { formatRupiah } from './BalanceCard';
+import { isOfflineOrServerDown } from '../api/client';
 import { batchCreateEntriesApi, createEntryApi } from '../api/entries';
 import { getItemSuggestionsApi } from '../api/wallets';
 import {
@@ -276,8 +277,31 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
     try {
       try {
         await batchCreateEntriesApi(batchPayload);
-      } catch {
-        // Fallback: sequential create
+      } catch (err: unknown) {
+        if (isOfflineOrServerDown(err)) {
+          // Fallback langsung ke antrean offline: JANGAN loop sekuensial ke server yang mati
+          const now = new Date().toISOString();
+          for (const item of batchPayload) {
+            await queueOfflineEntry({
+              client_id: item.client_id,
+              wallet_id: item.wallet_id,
+              type: 'titipan',
+              amount: item.amount,
+              item_name: item.item_name,
+              note: item.note || '',
+              occurred_at: item.occurred_at || now,
+              created_at: now,
+              retry_count: 0,
+            });
+          }
+          await clearShoppingDraft();
+          await refreshPendingCount();
+          onSuccess(batchPayload.length, true);
+          onClose();
+          return;
+        }
+
+        // Fallback: sequential create jika kegagalan batch bukan karena server mati/offline
         for (const item of batchPayload) {
           await createEntryApi(item.wallet_id, {
             client_id: item.client_id,
@@ -294,6 +318,32 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
       onSuccess(batchPayload.length, false);
       onClose();
     } catch (err: unknown) {
+      if (isOfflineOrServerDown(err)) {
+        try {
+          const now = new Date().toISOString();
+          for (const item of batchPayload) {
+            await queueOfflineEntry({
+              client_id: item.client_id,
+              wallet_id: item.wallet_id,
+              type: 'titipan',
+              amount: item.amount,
+              item_name: item.item_name,
+              note: item.note || '',
+              occurred_at: item.occurred_at || now,
+              created_at: now,
+              retry_count: 0,
+            });
+          }
+          await clearShoppingDraft();
+          await refreshPendingCount();
+          onSuccess(batchPayload.length, true);
+          onClose();
+          return;
+        } catch {
+          setError('Gagal menyimpan entri ke antrean offline.');
+          return;
+        }
+      }
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal menyimpan transaksi belanja.');
     } finally {

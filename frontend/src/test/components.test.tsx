@@ -8,6 +8,7 @@ import { StatementView } from '../components/StatementView';
 import { OnlineStatusProvider } from '../context/OnlineStatusContext';
 import * as entriesApi from '../api/entries';
 import { clearAllOfflineEntries, getPendingOfflineEntries, resetDBInstance } from '../offline/db';
+import { ApiError } from '../api/client';
 import { Entry, Wallet, CreatorInsights } from '../types';
 
 describe('UI Component Integration Tests', () => {
@@ -342,6 +343,52 @@ describe('UI Component Integration Tests', () => {
             amount: -18000,
             item_name: 'Es Teh Manis',
             occurred_at: expectedISO,
+            is_offline_pending: true,
+          }),
+          true
+        );
+        expect(handleClose).toHaveBeenCalled();
+      });
+    });
+
+    it('falls back to offline queue and closes modal successfully when server returns HTTP 503', async () => {
+      const handleSuccess = vi.fn();
+      const handleClose = vi.fn();
+
+      vi.spyOn(entriesApi, 'createEntryApi').mockRejectedValue(
+        new ApiError('Backend unavailable: 503 Service Temporarily Unavailable', 503)
+      );
+
+      render(
+        <OnlineStatusProvider>
+          <EntryModal
+            open={true}
+            walletId="w-1"
+            onClose={handleClose}
+            onSuccess={handleSuccess}
+          />
+        </OnlineStatusProvider>
+      );
+
+      const amountInput = screen.getByLabelText(/Nominal/i);
+      fireEvent.change(amountInput, { target: { value: '25000' } });
+
+      const itemInput = screen.getByLabelText(/Nama Barang/i);
+      fireEvent.change(itemInput, { target: { value: 'Soto Ayam 503' } });
+
+      const submitBtn = screen.getByRole('button', { name: 'Simpan Entri' });
+      fireEvent.click(submitBtn);
+
+      await waitFor(async () => {
+        const pending = await getPendingOfflineEntries();
+        expect(pending.length).toBe(1);
+        expect(pending[0].amount).toBe(-25000);
+        expect(pending[0].item_name).toBe('Soto Ayam 503');
+
+        expect(handleSuccess).toHaveBeenCalledWith(
+          expect.objectContaining({
+            amount: -25000,
+            item_name: 'Soto Ayam 503',
             is_offline_pending: true,
           }),
           true

@@ -1,3 +1,4 @@
+import { isOfflineOrServerDown } from '../api/client';
 import { createEntryApi, batchCreateEntriesApi } from '../api/entries';
 import {
   getPendingOfflineEntries,
@@ -63,7 +64,12 @@ export async function syncOfflineQueue(
           }
         }
       } catch (batchErr: unknown) {
-        // If batch fails, fallback to sequential single entry processing
+        if (isOfflineOrServerDown(batchErr)) {
+          console.warn('Batch sync aborted: server is down or client is offline', batchErr);
+          window.dispatchEvent(new CustomEvent('nebengbeli:synced', { detail: { synced, failed: pending.length - synced } }));
+          return { synced, failed: pending.length - synced };
+        }
+        // If batch fails (e.g. payload rejection), fallback to sequential single entry processing
         console.warn('Batch sync failed, falling back to sequential processing:', batchErr);
       }
     }

@@ -15,6 +15,7 @@ import {
   Paper,
 } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
+import { isOfflineOrServerDown } from '../api/client';
 import { createEntryApi } from '../api/entries';
 import { queueOfflineEntry } from '../offline/db';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
@@ -188,9 +189,8 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
       onSuccess(res.entry, false);
       handleClose();
     } catch (err: unknown) {
-      const apiErr = err as { status?: number; message?: string };
-      if (apiErr.status === 0) {
-        // Fallback to offline queue on network drop
+      if (isOfflineOrServerDown(err)) {
+        // Fallback to offline queue on network drop or server down
         const pendingItem = {
           client_id: clientId,
           wallet_id: walletId,
@@ -230,6 +230,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
         onSuccess(mockEntry, true);
         handleClose();
       } else {
+        const apiErr = err as { message?: string };
         setError(apiErr.message || 'Gagal menyimpan entri koreksi.');
       }
     } finally {

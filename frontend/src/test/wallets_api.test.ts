@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getCreatorInsightsApi } from '../api/wallets';
 import * as client from '../api/client';
+import { isOfflineOrServerDown, ApiError } from '../api/client';
+import * as networkMode from '../offline/networkMode';
 
 describe('Wallets API Adapters and Insights Normalization Suite', () => {
   beforeEach(() => {
@@ -78,5 +80,48 @@ describe('Wallets API Adapters and Insights Normalization Suite', () => {
     expect(result.weekly_trends).toEqual([]);
     expect(result.monthly_trends).toEqual([]);
     expect(result.wallet_balances).toEqual([]);
+  });
+
+  describe('isOfflineOrServerDown helper', () => {
+    it('returns false for null or undefined', () => {
+      expect(isOfflineOrServerDown(null)).toBe(false);
+      expect(isOfflineOrServerDown(undefined)).toBe(false);
+    });
+
+    it('returns true when navigator/app is offline', () => {
+      vi.spyOn(networkMode, 'isAppOnline').mockReturnValue(false);
+      expect(isOfflineOrServerDown(new Error('any error'))).toBe(true);
+    });
+
+    it('returns true for status 0 (network failure / dropped connection)', () => {
+      vi.spyOn(networkMode, 'isAppOnline').mockReturnValue(true);
+      expect(isOfflineOrServerDown(new ApiError('Failed to fetch', 0))).toBe(true);
+      expect(isOfflineOrServerDown({ status: 0 })).toBe(true);
+    });
+
+    it('returns true for 5xx server errors and 408 request timeout', () => {
+      vi.spyOn(networkMode, 'isAppOnline').mockReturnValue(true);
+      expect(isOfflineOrServerDown(new ApiError('Service Unavailable', 503))).toBe(true);
+      expect(isOfflineOrServerDown(new ApiError('Bad Gateway', 502))).toBe(true);
+      expect(isOfflineOrServerDown(new ApiError('Gateway Timeout', 504))).toBe(true);
+      expect(isOfflineOrServerDown(new ApiError('Internal Server Error', 500))).toBe(true);
+      expect(isOfflineOrServerDown(new ApiError('Request Timeout', 408))).toBe(true);
+      expect(isOfflineOrServerDown({ status: 503 })).toBe(true);
+    });
+
+    it('returns false for 4xx client errors (except 408)', () => {
+      vi.spyOn(networkMode, 'isAppOnline').mockReturnValue(true);
+      expect(isOfflineOrServerDown(new ApiError('Bad Request', 400))).toBe(false);
+      expect(isOfflineOrServerDown(new ApiError('Unauthorized', 401))).toBe(false);
+      expect(isOfflineOrServerDown(new ApiError('Forbidden', 403))).toBe(false);
+      expect(isOfflineOrServerDown(new ApiError('Not Found', 404))).toBe(false);
+      expect(isOfflineOrServerDown(new ApiError('Conflict', 409))).toBe(false);
+      expect(isOfflineOrServerDown(new ApiError('Unprocessable Entity', 422))).toBe(false);
+    });
+
+    it('returns false for generic errors without status', () => {
+      vi.spyOn(networkMode, 'isAppOnline').mockReturnValue(true);
+      expect(isOfflineOrServerDown(new Error('SyntaxError'))).toBe(false);
+    });
   });
 });

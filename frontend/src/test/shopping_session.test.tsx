@@ -7,9 +7,12 @@ import {
   clearShoppingDraft,
   clearAllOfflineEntries,
   getPendingOfflineCount,
+  getPendingOfflineEntries,
   resetDBInstance,
 } from '../offline/db';
+import { ApiError } from '../api/client';
 import * as entriesApi from '../api/entries';
+import * as syncModule from '../offline/sync';
 import * as walletsApi from '../api/wallets';
 import { Wallet, ItemSuggestion } from '../types';
 
@@ -790,6 +793,62 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
         ])
       );
       expect(handleSuccess).toHaveBeenCalledWith(1, false);
+    });
+  });
+
+  it('falls back directly to offline queue when batch API returns HTTP 503 without sequential retry loop', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+
+    vi.spyOn(syncModule, 'syncOfflineQueue').mockResolvedValue({ synced: 0, failed: 0 });
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockRejectedValue(
+      new ApiError('Backend unavailable: 503 Service Unavailable', 503)
+    );
+    const sequentialSpy = vi.spyOn(entriesApi, 'createEntryApi');
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal
+          open={true}
+          wallets={mockWallets}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </OnlineStatusProvider>
+    );
+
+    // Row 1 - valid
+    const walletInput1 = screen.getByRole('combobox', { name: 'Buku baris 1' });
+    fireEvent.focus(walletInput1);
+    fireEvent.change(walletInput1, { target: { value: 'Rendy' } });
+    fireEvent.keyDown(walletInput1, { key: 'ArrowDown' });
+    fireEvent.keyDown(walletInput1, { key: 'Enter' });
+
+    const itemInput1 = screen.getByRole('combobox', { name: 'Barang baris 1' });
+    fireEvent.change(itemInput1, { target: { value: 'Nasi Kuning' } });
+
+    const amountInput1 = screen.getByRole('textbox', { name: 'Harga baris 1' });
+    fireEvent.change(amountInput1, { target: { value: '15000' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Simpan Semua/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(async () => {
+      // Must have called batchCreateEntriesApi
+      expect(batchSpy).toHaveBeenCalled();
+      // Must NOT hammer the dead server with sequential loop calls
+      expect(sequentialSpy).not.toHaveBeenCalled();
+
+      // Must have queued the row into IndexedDB offline queue
+      const pending = await getPendingOfflineEntries();
+      expect(pending.length).toBe(1);
+      expect(pending[0].item_name).toBe('Nasi Kuning');
+      expect(pending[0].amount).toBe(15000);
+      expect(pending[0].wallet_id).toBe('w-1');
+
+      // Must call onSuccess with isOffline = true and close modal
+      expect(handleSuccess).toHaveBeenCalledWith(1, true);
+      expect(handleClose).toHaveBeenCalled();
     });
   });
 });
