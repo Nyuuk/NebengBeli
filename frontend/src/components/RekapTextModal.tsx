@@ -6,7 +6,6 @@ import {
   DialogActions,
   Button,
   Box,
-  Tabs,
   Tab,
   TextField,
   Alert,
@@ -19,6 +18,7 @@ import ShareIcon from '@mui/icons-material/Share';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import { Entry, Wallet, RecapPeriod } from '../types';
 import { formatRupiah } from './BalanceCard';
+import { ResponsiveTabs } from './ResponsiveTabs';
 
 interface RekapTextModalProps {
   open: boolean;
@@ -203,7 +203,7 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
       </DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
-          <Tabs
+          <ResponsiveTabs
             value={period === 'custom' ? 3 : period === 'this_month' ? 2 : period === 'this_week' ? 1 : 0}
             onChange={(_, val) => {
               if (val === 0) setPeriod('today');
@@ -211,13 +211,12 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
               if (val === 2) setPeriod('this_month');
               if (val === 3) setPeriod('custom');
             }}
-            variant="fullWidth"
           >
             <Tab label="Hari Ini" />
             <Tab label="Minggu Ini" />
             <Tab label="Bulan Ini" />
             <Tab label="Custom" />
-          </Tabs>
+          </ResponsiveTabs>
         </Box>
 
         {period === 'custom' && (
