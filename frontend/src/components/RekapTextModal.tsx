@@ -220,7 +220,7 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
         </Box>
 
         {period === 'custom' && (
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 2, '& .MuiTextField-root': { minWidth: 0 } }}>
             <TextField
               label="Tanggal Mulai"
               type="date"
@@ -279,11 +279,18 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
           {rekapText}
         </Paper>
       </DialogContent>
-      <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+      <DialogActions sx={{
+        p: 2,
+        justifyContent: 'space-between',
+        flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: { xs: 'stretch', sm: 'center' },
+        gap: 1,
+        '& > :not(:first-of-type)': { ml: 0 },
+      }}>
         <Button onClick={onClose} color="inherit">
           Tutup
         </Button>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1, minWidth: 0 }}>
           <Button
             variant="outlined"
             startIcon={<ShareIcon />}

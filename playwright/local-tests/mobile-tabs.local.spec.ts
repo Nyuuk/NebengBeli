@@ -90,6 +90,74 @@ async function reachLastWithControls(row: Locator, narrow: boolean) {
   }
 }
 
+async function recapLayout(page: Page, info: import('@playwright/test').TestInfo) {
+  const dialog = page.getByRole('dialog');
+  const measurements = await dialog.evaluate(el => {
+    const bounds = el.getBoundingClientRect();
+    const dates = [...el.querySelectorAll<HTMLInputElement>('input[type="date"]')].map(input => {
+      const field = input.closest('.MuiTextField-root')!;
+      const label = field.querySelector('label')!;
+      const rect = input.getBoundingClientRect();
+      const style = getComputedStyle(input);
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d')!;
+      context.font = style.font;
+      // Reserve the native calendar indicator as well as both input paddings.
+      const requiredWidth = context.measureText('00/00/0000').width + 24
+        + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      return { width: rect.width, requiredWidth, labelWidth: label.scrollWidth * 0.75,
+        availableLabelWidth: field.clientWidth - 28, left: rect.left, right: rect.right };
+    });
+    const footer = el.querySelector('.MuiDialogActions-root')!;
+    const buttons = [...footer.querySelectorAll('button')].map(button => {
+      const rect = button.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(button);
+      const content = range.getBoundingClientRect();
+      return { label: button.textContent, left: rect.left, right: rect.right, top: rect.top,
+        bottom: rect.bottom, contentLeft: content.left, contentRight: content.right,
+        contentTop: content.top, contentBottom: content.bottom };
+    });
+    return { left: bounds.left, right: bounds.right, dates, buttons,
+      contentOverflow: el.querySelector('.MuiDialogContent-root')!.scrollWidth
+        > el.querySelector('.MuiDialogContent-root')!.clientWidth,
+      footerOverflow: footer.scrollWidth > footer.clientWidth };
+  });
+  await info.attach('recap-layout-measurements', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
+  expect(measurements.dates).toHaveLength(2);
+  for (const date of measurements.dates) {
+    expect(date.width).toBeGreaterThanOrEqual(date.requiredWidth);
+    expect(date.labelWidth).toBeLessThanOrEqual(date.availableLabelWidth);
+    expect(date.left).toBeGreaterThanOrEqual(measurements.left);
+    expect(date.right).toBeLessThanOrEqual(measurements.right);
+  }
+  expect(measurements.contentOverflow).toBe(false);
+  expect(measurements.footerOverflow).toBe(false);
+  expect(measurements.buttons).toHaveLength(3);
+  for (const button of measurements.buttons) {
+    expect(button.left).toBeGreaterThanOrEqual(measurements.left);
+    expect(button.right).toBeLessThanOrEqual(measurements.right);
+    expect(button.top).toBeGreaterThanOrEqual(0);
+    expect(button.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(button.contentLeft).toBeGreaterThanOrEqual(button.left);
+    expect(button.contentRight).toBeLessThanOrEqual(button.right);
+    expect(button.contentTop).toBeGreaterThanOrEqual(button.top);
+    expect(button.contentBottom).toBeLessThanOrEqual(button.bottom);
+  }
+  for (let i = 0; i < measurements.buttons.length; i++) {
+    for (const other of measurements.buttons.slice(i + 1)) {
+      const button = measurements.buttons[i];
+      expect(button.right <= other.left || other.right <= button.left
+        || button.bottom <= other.top || other.bottom <= button.top).toBe(true);
+    }
+  }
+  if (page.viewportSize()!.width === 1280) {
+    expect(measurements.buttons[0].top).toBe(measurements.buttons[1].top);
+    const dates = dialog.locator('input[type="date"]');
+    expect((await dates.first().boundingBox())!.y).toBe((await dates.last().boundingBox())!.y);
+  }
+}
+
 for (const width of [320, 360, 390, 430, 1280]) {
   test(`local recap: Custom reachable, date fields and keyboard at ${width}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 });
@@ -114,6 +182,14 @@ for (const width of [320, 360, 390, 430, 1280]) {
     await contained(custom, row);
     await noDocumentOverflow(page);
     await page.screenshot({ path: info.outputPath(`recap-${width}.png`) });
+    await recapLayout(page, info);
+    const close = page.getByRole('button', { name: 'Tutup', exact: true });
+    await close.focus();
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Bagikan', exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Salin Teks', exact: true })).toBeFocused();
   });
 
   test(`local dashboard and both admin rows: navigation at ${width}`, async ({ page }, info) => {
@@ -146,3 +222,34 @@ for (const width of [320, 360, 390, 430, 1280]) {
     await page.screenshot({ path: info.outputPath(`admin-trends-${width}.png`) });
   });
 }
+
+test('local recap: date/footer containment and content scrolling at short 320x568', async ({ page }, info) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto(`${fixture}?recap`);
+  await reachLastWithControls(page.getByRole('tablist'), true);
+  // Prove horizontal bounds before focus/scroll can move controls into view.
+  await recapLayout(page, info);
+  const content = page.getByRole('dialog').locator('.MuiDialogContent-root');
+  expect(await content.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  for (const label of ['Tanggal Mulai', 'Tanggal Selesai']) {
+    const input = page.getByLabel(label);
+    await input.focus();
+    await expect(input).toBeFocused();
+    await expect.poll(() => input.evaluate(el => {
+      const a = el.getBoundingClientRect();
+      const b = el.closest('.MuiDialogContent-root')!.getBoundingClientRect();
+      return a.top >= b.top && a.bottom <= b.bottom;
+    })).toBe(true);
+    await input.fill('2026-01-01');
+    await expect(input).toHaveValue('2026-01-01');
+  }
+  await content.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect.poll(() => content.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Tutup', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Bagikan', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Salin Teks', exact: true })).toBeFocused();
+  await noDocumentOverflow(page);
+  await page.screenshot({ path: info.outputPath('recap-short-320x568.png') });
+});
