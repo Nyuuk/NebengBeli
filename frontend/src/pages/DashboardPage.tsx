@@ -12,7 +12,6 @@ import {
   DialogActions,
   TextField,
   Chip,
-  Tabs,
   Tab,
   Alert,
   CircularProgress,
@@ -30,6 +29,7 @@ import CloudDoneIcon from '@mui/icons-material/CloudDone';
 import { useNavigate } from 'react-router-dom';
 
 import { Layout } from '../components/Layout';
+import { ResponsiveTabs } from '../components/ResponsiveTabs';
 import { formatRupiah } from '../components/BalanceCard';
 import { CreatorInsightsCard } from '../components/CreatorInsightsCard';
 import { ShoppingSessionModal } from '../components/ShoppingSessionModal';
@@ -403,11 +403,11 @@ export const DashboardPage: React.FC = () => {
 
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tab} onChange={(_, val) => setTab(val)}>
+        <ResponsiveTabs value={tab} onChange={(_, val) => setTab(val)}>
           <Tab label={`Dompet Saya Kelola (${creatorWallets.length})`} />
           <Tab label={`Dompet Milik Saya (${ownerWallets.length})`} />
           <Tab label={`Diarsipkan (${archivedWallets.length})`} icon={<ArchiveIcon fontSize="small" />} iconPosition="start" />
-        </Tabs>
+        </ResponsiveTabs>
       </Box>
 
       {/* Tab 0: Dompet yang Saya Kelola (Pembuat) */}

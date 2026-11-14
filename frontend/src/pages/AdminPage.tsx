@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Paper,
-  Tabs,
   Tab,
   Table,
   TableBody,
@@ -32,6 +31,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import KeyIcon from '@mui/icons-material/Key';
 import { Layout } from '../components/Layout';
+import { ResponsiveTabs } from '../components/ResponsiveTabs';
 import { formatRupiah } from '../components/BalanceCard';
 import {
   adminGetStatsApi,
@@ -248,14 +248,14 @@ export const AdminPage: React.FC = () => {
 
       {/* Admin Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tab} onChange={(_, val) => setTab(val)} variant="scrollable" scrollButtons="auto">
+        <ResponsiveTabs value={tab} onChange={(_, val) => setTab(val)}>
           <Tab icon={<PeopleIcon />} iconPosition="start" label="Pengguna (Users)" />
           <Tab icon={<AccountBalanceWalletIcon />} iconPosition="start" label="Semua Buku (Wallets)" />
           <Tab icon={<ReceiptLongIcon />} iconPosition="start" label="Semua Transaksi (Entries)" />
           <Tab icon={<AssessmentIcon />} iconPosition="start" label="Rekap Pembuat (Creators)" />
           <Tab icon={<TrendingUpIcon />} iconPosition="start" label="Tren Sistem (Trends)" />
           <Tab icon={<SecurityIcon />} iconPosition="start" label="Audit Logs" />
-        </Tabs>
+        </ResponsiveTabs>
       </Box>
 
       {loading ? (
@@ -512,7 +512,7 @@ export const AdminPage: React.FC = () => {
           {/* TAB 4: TRENDS */}
           {tab === 4 && (
             <Box>
-              <Tabs
+              <ResponsiveTabs
                 value={trendSubTab}
                 onChange={(_, v) => setTrendSubTab(v)}
                 sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
@@ -520,7 +520,7 @@ export const AdminPage: React.FC = () => {
                 <Tab label="Tren Harian (Daily)" />
                 <Tab label="Tren Mingguan (Weekly)" />
                 <Tab label="Tren Bulanan (Monthly)" />
-              </Tabs>
+              </ResponsiveTabs>
 
               {(() => {
                 const currentList =
