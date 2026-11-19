@@ -14,11 +14,15 @@ import {
   clearAllOfflineEntries,
   getPendingOfflineEntries,
   resetDBInstance,
+  setCurrentUserId,
 } from '../offline/db';
+import { resetSyncCooldown } from '../offline/sync';
 import { Entry, PendingOfflineEntry } from '../types';
 
 describe('Correction Serialization and Offline Contract Alignment', () => {
   beforeEach(async () => {
+    resetSyncCooldown();
+    setCurrentUserId(null);
     resetDBInstance();
     await clearAllOfflineEntries();
     vi.restoreAllMocks();
@@ -222,6 +226,7 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
   });
 
   it('queues offline correction with target_amount and replaying sends target_amount semantics', async () => {
+    setCurrentUserId('user-1');
     const offlineItem: PendingOfflineEntry = {
       client_id: 'off-corr-1',
       wallet_id: 'w-1',
