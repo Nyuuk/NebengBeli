@@ -4,6 +4,8 @@ import {
   getPendingOfflineEntries,
   getPendingOfflineCount,
   getAllOfflineEntries,
+  getUnassignedOfflineEntries,
+  assignOfflineEntryUser,
   removePendingOfflineEntry,
   markOfflineEntryFailed,
   moveFailedOfflineEntry,
@@ -11,6 +13,12 @@ import {
   setCurrentUserId,
   setCachedWallets,
   getCachedWallets,
+  setCachedStatement,
+  getCachedStatement,
+  setCachedSuggestions,
+  getCachedSuggestions,
+  setCachedInsights,
+  getCachedInsights,
   saveShoppingDraft,
   getShoppingDraft,
   hasShoppingDraft,
@@ -153,6 +161,23 @@ describe('User-Bound Offline Storage & Session Invalidation Holding', () => {
     expect(await getPendingOfflineCount()).toBe(0);
   });
 
+  it('preserves userless legacy entries for explicit inspection and assignment only', async () => {
+    const legacy: PendingOfflineEntry = {
+      client_id: 'legacy-client-id', wallet_id: 'legacy-wallet', type: 'titipan', amount: 900,
+      item_name: 'Legacy payload', note: 'keep me', occurred_at: '2026-01-01T00:00:00Z',
+      created_at: '2026-01-01T00:00:00Z', retry_count: 0,
+    };
+    await queueOfflineEntry(legacy);
+    setCurrentUserId('user-B');
+    expect(await getPendingOfflineEntries('user-B')).toEqual([]);
+    expect(await getUnassignedOfflineEntries()).toEqual([expect.objectContaining(legacy)]);
+    expect(await assignOfflineEntryUser('legacy-client-id', 'user-B')).toBe(true);
+    expect(await getPendingOfflineEntries('user-B')).toEqual([expect.objectContaining({
+      ...legacy, user_id: 'user-B', client_id: 'legacy-client-id',
+    })]);
+    expect(await getUnassignedOfflineEntries()).toEqual([]);
+  });
+
   it('isolates cached wallets per user', async () => {
     const walletsUser1: Wallet[] = [
       {
@@ -186,5 +211,16 @@ describe('User-Bound Offline Storage & Session Invalidation Holding', () => {
 
     expect(cached1?.wallets[0].name).toBe('Buku User 1');
     expect(cached2?.wallets[0].name).toBe('Buku User 2');
+
+    // Unscoped legacy cache entries remain stored, but are not a fallback for an account.
+    await setCachedWallets(walletsUser1, 'legacy', undefined);
+    expect(await getCachedWallets('legacy', 'u-2')).toBeNull();
+
+    await setCachedStatement('w-legacy', { wallet: walletsUser1[0], summary: { total_titipan: 0, total_topup: 0, total_koreksi: 0, current_balance: 0, entry_count: 0 }, entries: [], total: 0, page: 1, page_size: 10 }, undefined);
+    expect(await getCachedStatement('w-legacy', 'u-2')).toBeNull();
+    await setCachedSuggestions('w-legacy', [{ item_name: 'private', last_price: 1, frequency: 1 }], undefined);
+    expect(await getCachedSuggestions('w-legacy', 'u-2')).toBeNull();
+    await setCachedInsights({} as never, 'legacy', undefined);
+    expect(await getCachedInsights('legacy', 'u-2')).toBeNull();
   });
 });

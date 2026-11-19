@@ -15,18 +15,19 @@ const (
 )
 
 type Entry struct {
-	ID               uuid.UUID  `json:"id"`
-	ClientID         uuid.UUID  `json:"client_id"`
-	WalletID         uuid.UUID  `json:"wallet_id"`
-	Type             EntryType  `json:"type"`
-	Amount           int64      `json:"amount"` // Signed BIGINT (- for titipan/debit, + for topup/credit)
-	ItemName         string     `json:"item_name"`
-	Note             string     `json:"note"`
-	CorrectsEntryID  *uuid.UUID `json:"corrects_entry_id,omitempty"`
-	CorrectionReason string     `json:"correction_reason,omitempty"`
-	OccurredAt       time.Time  `json:"occurred_at"`
-	CreatedBy        uuid.UUID  `json:"created_by"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID                 uuid.UUID  `json:"id"`
+	ClientID           uuid.UUID  `json:"client_id"`
+	WalletID           uuid.UUID  `json:"wallet_id"`
+	Type               EntryType  `json:"type"`
+	Amount             int64      `json:"amount"` // Signed BIGINT (- for titipan/debit, + for topup/credit)
+	ItemName           string     `json:"item_name"`
+	Note               string     `json:"note"`
+	CorrectsEntryID    *uuid.UUID `json:"corrects_entry_id,omitempty"`
+	CorrectionReason   string     `json:"correction_reason,omitempty"`
+	OccurredAt         time.Time  `json:"occurred_at"`
+	OccurredAtProvided bool       `json:"-"`
+	CreatedBy          uuid.UUID  `json:"created_by"`
+	CreatedAt          time.Time  `json:"created_at"`
 
 	// Derived / populated fields for API responses
 	CreatedByUsername     string  `json:"created_by_username,omitempty"`

@@ -230,6 +230,7 @@ export interface CreatorInsights {
 
 export interface ShoppingSessionRow {
   rowId: string;
+  client_id?: string;
   wallet_id: string;
   wallet_name?: string;
   item_name: string;
@@ -242,6 +243,7 @@ export interface ShoppingSessionDraft {
   rows: ShoppingSessionRow[];
   occurred_at: string;
   saved_at: string;
+  client_ids_by_payload?: Record<string, string>;
 }
 
 export type RecapPeriod = 'today' | 'this_week' | 'this_month' | 'custom';

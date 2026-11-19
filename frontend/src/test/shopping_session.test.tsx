@@ -796,6 +796,104 @@ describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
     });
   });
 
+  it('queues only unresolved rows when sequential fallback partially succeeds', async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockRejectedValue(
+      new ApiError('Batch rejected', 400)
+    );
+    const sequentialSpy = vi.spyOn(entriesApi, 'createEntryApi')
+      .mockResolvedValueOnce({ entry: {} as never, is_duplicate: false })
+      .mockRejectedValueOnce(new ApiError('Request outcome unknown', 500));
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal open={true} wallets={mockWallets} onClose={handleClose} onSuccess={handleSuccess} />
+      </OnlineStatusProvider>
+    );
+
+    const selectWallet = (row: number, value: string) => {
+      const input = screen.getByRole('combobox', { name: `Buku baris ${row}` });
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'Enter' });
+    };
+    selectWallet(1, 'Rendy');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Barang baris 1' }), { target: { value: 'First' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Harga baris 1' }), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah Baris Titipan' }));
+    selectWallet(2, 'Budi');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Barang baris 2' }), { target: { value: 'Second' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Harga baris 2' }), { target: { value: '2000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Simpan Semua/i }));
+
+    await waitFor(async () => {
+      expect(batchSpy).toHaveBeenCalledOnce();
+      expect(sequentialSpy).toHaveBeenCalledTimes(2);
+      const sentItems = batchSpy.mock.calls[0][0];
+      const retriedItems = sequentialSpy.mock.calls.map((call) => call[1]);
+      expect(retriedItems.map((item) => item.client_id)).toEqual(sentItems.map((item) => item.client_id));
+      const pending = await getPendingOfflineEntries();
+      expect(pending.map((item) => item.client_id)).toEqual([sentItems[1].client_id]);
+      expect(pending[0].item_name).toBe('Second');
+      expect(handleSuccess).toHaveBeenCalledWith(2, true);
+      expect(handleClose).toHaveBeenCalled();
+    });
+  });
+
+  it('reuses client IDs when a partially submitted draft timestamp changes A-to-B-to-A', async () => {
+    const batchSpy = vi.spyOn(entriesApi, 'batchCreateEntriesApi').mockRejectedValue(
+      new ApiError('Batch rejected', 400)
+    );
+    const sequentialSpy = vi.spyOn(entriesApi, 'createEntryApi')
+      .mockResolvedValueOnce({ entry: {} as never, is_duplicate: false })
+      .mockRejectedValueOnce(new ApiError('Second row rejected', 422));
+
+    await saveShoppingDraft({
+      rows: [
+        { rowId: 'retry-row-1', wallet_id: 'w-1', item_name: 'Committed item', amount_str: '1000', amount: 1000, note: '', client_id: 'persisted-row-id' },
+        { rowId: 'retry-row-2', wallet_id: 'w-2', item_name: 'Rejected item', amount_str: '2000', amount: 2000, note: '', client_id: 'persisted-second-id' },
+      ],
+      occurred_at: '2026-09-29T12:00',
+      saved_at: new Date().toISOString(),
+    });
+
+    render(
+      <OnlineStatusProvider>
+        <ShoppingSessionModal open={true} wallets={mockWallets} onClose={() => {}} onSuccess={() => {}} />
+      </OnlineStatusProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText('Draft Tersimpan Dipulihkan')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Simpan Semua/i }));
+    await waitFor(() => expect(sequentialSpy).toHaveBeenCalledTimes(2));
+    const originalIDs = batchSpy.mock.calls[0][0].map((item) => item.client_id);
+    expect(originalIDs).toEqual(['persisted-row-id', 'persisted-second-id']);
+
+    const timestampInput = screen.getByLabelText('Waktu Belanja');
+    fireEvent.change(timestampInput, { target: { value: '2026-09-29T13:00' } });
+    sequentialSpy.mockReset().mockResolvedValue({ entry: {} as never, is_duplicate: true });
+    fireEvent.click(screen.getByRole('button', { name: /Simpan Semua/i }));
+
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledTimes(2));
+    const retriedItems = batchSpy.mock.calls[1][0];
+    expect(retriedItems.every((item, index) => item.client_id !== originalIDs[index])).toBe(true);
+    expect(retriedItems.every((item) => item.occurred_at !== batchSpy.mock.calls[0][0][0].occurred_at)).toBe(true);
+    await waitFor(() => expect(sequentialSpy).toHaveBeenCalledTimes(2));
+    expect(sequentialSpy.mock.calls.map((call) => call[1].client_id)).toEqual(retriedItems.map((item) => item.client_id));
+
+    fireEvent.change(timestampInput, { target: { value: '2026-09-29T12:00' } });
+    sequentialSpy.mockReset().mockResolvedValue({ entry: {} as never, is_duplicate: true });
+    fireEvent.click(screen.getByRole('button', { name: /Simpan Semua/i }));
+
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledTimes(3));
+    const revertedItems = batchSpy.mock.calls[2][0];
+    expect(revertedItems.map((item) => item.client_id)).toEqual(originalIDs);
+    expect(revertedItems.map((item) => item.client_id)).not.toEqual(retriedItems.map((item) => item.client_id));
+    await waitFor(() => expect(sequentialSpy).toHaveBeenCalledTimes(2));
+  });
+
   it('falls back directly to offline queue when batch API returns HTTP 503 without sequential retry loop', async () => {
     const handleSuccess = vi.fn();
     const handleClose = vi.fn();

@@ -677,9 +677,11 @@ func (r *sqlEntryRepository) CreateBatch(ctx context.Context, entries []model.En
 			corrects_entry_id, correction_reason, occurred_at, created_by, created_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (client_id) DO NOTHING
 		RETURNING id, created_at;
 	`
 
+	seen := make(map[uuid.UUID]model.Entry, len(entries))
 	for i := range entries {
 		e := entries[i]
 		if e.ClientID == uuid.Nil {
@@ -691,6 +693,13 @@ func (r *sqlEntryRepository) CreateBatch(ctx context.Context, entries []model.En
 		if e.CreatedAt.IsZero() {
 			e.CreatedAt = now
 		}
+		if prior, ok := seen[e.ClientID]; ok {
+			if !sameBatchPayload(prior, e) {
+				return nil, fmt.Errorf("duplicate client id %s has conflicting payload", e.ClientID)
+			}
+			return nil, fmt.Errorf("duplicate client id %s appears more than once in batch", e.ClientID)
+		}
+		seen[e.ClientID] = e
 
 		err := tx.QueryRowContext(ctx, insertSQL,
 			e.ClientID,
@@ -706,7 +715,25 @@ func (r *sqlEntryRepository) CreateBatch(ctx context.Context, entries []model.En
 			e.CreatedAt,
 		).Scan(&e.ID, &e.CreatedAt)
 
-		if err != nil {
+		if err == sql.ErrNoRows {
+			var existing model.Entry
+			lookupErr := tx.QueryRowContext(ctx, `
+				SELECT id, client_id, wallet_id, type, amount, item_name, note,
+				       corrects_entry_id, correction_reason, occurred_at, created_by, created_at
+				FROM entries WHERE client_id = $1;
+			`, e.ClientID).Scan(
+				&existing.ID, &existing.ClientID, &existing.WalletID, &existing.Type,
+				&existing.Amount, &existing.ItemName, &existing.Note, &existing.CorrectsEntryID,
+				&existing.CorrectionReason, &existing.OccurredAt, &existing.CreatedBy, &existing.CreatedAt,
+			)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("failed to resolve batch client id %s: %w", e.ClientID, lookupErr)
+			}
+			if !sameBatchPayload(existing, e) {
+				return nil, fmt.Errorf("client id %s already exists with conflicting payload", e.ClientID)
+			}
+			e = existing
+		} else if err != nil {
 			return nil, fmt.Errorf("failed to insert batch entry (index %d, item '%s'): %w", i, e.ItemName, err)
 		}
 
@@ -718,6 +745,26 @@ func (r *sqlEntryRepository) CreateBatch(ctx context.Context, entries []model.En
 	}
 
 	return createdEntries, nil
+}
+
+func sameBatchPayload(existing, requested model.Entry) bool {
+	return existing.ClientID == requested.ClientID &&
+		existing.CreatedBy == requested.CreatedBy &&
+		existing.WalletID == requested.WalletID &&
+		existing.Type == requested.Type &&
+		existing.Amount == requested.Amount &&
+		existing.ItemName == requested.ItemName &&
+		existing.Note == requested.Note &&
+		uuidPtrEqual(existing.CorrectsEntryID, requested.CorrectsEntryID) &&
+		existing.CorrectionReason == requested.CorrectionReason &&
+		(!requested.OccurredAtProvided || existing.OccurredAt.Equal(requested.OccurredAt))
+}
+
+func uuidPtrEqual(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 func (r *sqlEntryRepository) GetItemSuggestions(ctx context.Context, walletID uuid.UUID, query string, limit int) ([]model.ItemSuggestion, error) {

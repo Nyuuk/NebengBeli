@@ -72,6 +72,17 @@ export const isRowValid = (r: ShoppingSessionRow): boolean => {
   return Boolean(r.wallet_id) && Boolean(r.item_name.trim()) && r.amount > 0;
 };
 
+const getShoppingPayloadKey = (row: ShoppingSessionRow, occurredAtISO: string): string =>
+  JSON.stringify([
+    row.rowId,
+    row.wallet_id,
+    'titipan',
+    row.amount,
+    row.item_name.trim(),
+    row.note.trim(),
+    occurredAtISO,
+  ]);
+
 const emptyRow = (): ShoppingSessionRow => ({
   rowId: uuidv4(),
   wallet_id: '',
@@ -94,6 +105,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   const [occurredAt, setOccurredAt] = useState<string>(
     getLocalDatetimeInputValue()
   );
+  const [clientIDsByPayload, setClientIDsByPayload] = useState<Record<string, string>>({});
   const [suggestionsMap, setSuggestionsMap] = useState<Record<string, ItemSuggestion[]>>({});
   const [hasDraftRestored, setHasDraftRestored] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,10 +141,21 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
     if (open) {
       getShoppingDraft().then((draft) => {
         if (draft && draft.rows && draft.rows.length > 0) {
-          setRows(draft.rows);
-          if (draft.occurred_at) {
-            setOccurredAt(formatToLocalDatetimeInput(draft.occurred_at));
+          const restoredOccurredAt = draft.occurred_at
+            ? formatToLocalDatetimeInput(draft.occurred_at)
+            : getLocalDatetimeInputValue();
+          const restoredOccurredISO = localDatetimeInputToISO(restoredOccurredAt);
+          const restoredIDs = { ...(draft.client_ids_by_payload || {}) };
+          // Older drafts only stored one ID per row; bind it to that draft timestamp.
+          for (const row of draft.rows) {
+            if (row.client_id) {
+              const key = getShoppingPayloadKey(row, restoredOccurredISO);
+              restoredIDs[key] = restoredIDs[key] || row.client_id;
+            }
           }
+          setRows(draft.rows);
+          setClientIDsByPayload(restoredIDs);
+          if (draft.occurred_at) setOccurredAt(restoredOccurredAt);
           setHasDraftRestored(true);
           // Pre-fetch suggestions for used wallets
           draft.rows.forEach((r) => {
@@ -152,9 +175,14 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
         rows,
         occurred_at: occurredAt,
         saved_at: new Date().toISOString(),
+        client_ids_by_payload: clientIDsByPayload,
       });
     }
-  }, [rows, occurredAt, open]);
+  }, [rows, occurredAt, open, clientIDsByPayload]);
+
+  const handleOccurredAtChange = (value: string) => {
+    setOccurredAt(value);
+  };
 
   const handleAddRow = () => {
     setRows((prev) => [...prev, emptyRow()]);
@@ -170,7 +198,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   const handleRowChange = (index: number, field: keyof ShoppingSessionRow, value: string | number) => {
     setRows((prev) => {
       const updated = [...prev];
-      const row = { ...updated[index], [field]: value };
+      const row = { ...updated[index], [field]: value, client_id: undefined };
 
       if (field === 'amount_str') {
         const parsed = parseInt((value as string).replace(/[^0-9]/g, ''), 10) || 0;
@@ -193,6 +221,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
       const updated = [...prev];
       updated[index] = {
         ...updated[index],
+        client_id: undefined,
         item_name: suggestion.item_name,
         amount_str: suggestion.last_price ? suggestion.last_price.toString() : updated[index].amount_str,
         amount: suggestion.last_price || updated[index].amount,
@@ -234,15 +263,36 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
     setIsSubmitting(true);
     const occurredDateISO = localDatetimeInputToISO(occurredAt);
 
-    const batchPayload: BatchEntryItem[] = nonBlankRows.map((r) => ({
-      client_id: uuidv4(),
-      wallet_id: r.wallet_id,
-      type: 'titipan',
-      amount: r.amount,
-      item_name: r.item_name.trim(),
-      note: r.note.trim(),
-      occurred_at: occurredDateISO,
-    }));
+    const nextClientIDsByPayload = { ...clientIDsByPayload };
+    const batchPayload: BatchEntryItem[] = nonBlankRows.map((row) => {
+      const payloadKey = getShoppingPayloadKey(row, occurredDateISO);
+      const clientID = nextClientIDsByPayload[payloadKey] || uuidv4();
+      nextClientIDsByPayload[payloadKey] = clientID;
+      return {
+        client_id: clientID,
+        wallet_id: row.wallet_id,
+        type: 'titipan',
+        amount: row.amount,
+        item_name: row.item_name.trim(),
+        note: row.note.trim(),
+        occurred_at: occurredDateISO,
+      };
+    });
+    // Persist IDs by effective submitted payload before any request. A changed
+    // timestamp gets a new ID, while reverting to an earlier payload reuses its ID.
+    setClientIDsByPayload(nextClientIDsByPayload);
+    const clientIDsByRow = new Map(nonBlankRows.map((row, index) => [row.rowId, batchPayload[index].client_id]));
+    const rowsWithClientIDs = rows.map((row) => {
+      const clientID = clientIDsByRow.get(row.rowId);
+      return clientID ? { ...row, client_id: clientID } : row;
+    });
+    setRows(rowsWithClientIDs);
+    await saveShoppingDraft({
+      rows: rowsWithClientIDs,
+      occurred_at: occurredAt,
+      saved_at: new Date().toISOString(),
+      client_ids_by_payload: nextClientIDsByPayload,
+    });
 
     if (!isOnline) {
       // Offline mode: Store all rows in IndexedDB
@@ -301,16 +351,45 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
           return;
         }
 
-        // Fallback: sequential create jika kegagalan batch bukan karena server mati/offline
-        for (const item of batchPayload) {
-          await createEntryApi(item.wallet_id, {
-            client_id: item.client_id,
-            type: 'titipan',
-            amount: item.amount,
-            item_name: item.item_name,
-            note: item.note,
-            occurred_at: item.occurred_at,
-          });
+        // The atomic batch may have been rejected. Preserve each row's stable ID and
+        // track outcomes so successful rows are never queued after a later failure.
+        for (let index = 0; index < batchPayload.length; index++) {
+          const item = batchPayload[index];
+          try {
+            await createEntryApi(item.wallet_id, {
+              client_id: item.client_id,
+              type: 'titipan',
+              amount: item.amount,
+              item_name: item.item_name,
+              note: item.note,
+              occurred_at: item.occurred_at,
+            });
+          } catch (sequentialErr: unknown) {
+            const status = (sequentialErr as { status?: number }).status;
+            if (status && [400, 403, 404, 422].includes(status)) throw sequentialErr;
+
+            // Current request may have committed despite its response being lost;
+            // queue it and the not-yet-sent rows for idempotent replay.
+            const now = new Date().toISOString();
+            for (const unresolved of batchPayload.slice(index)) {
+              await queueOfflineEntry({
+                client_id: unresolved.client_id,
+                wallet_id: unresolved.wallet_id,
+                type: 'titipan',
+                amount: unresolved.amount,
+                item_name: unresolved.item_name,
+                note: unresolved.note || '',
+                occurred_at: unresolved.occurred_at || now,
+                created_at: now,
+                retry_count: 0,
+              });
+            }
+            await clearShoppingDraft();
+            await refreshPendingCount();
+            onSuccess(batchPayload.length, true);
+            onClose();
+            return;
+          }
         }
       }
 
@@ -408,7 +487,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
             type="datetime-local"
             size="small"
             value={occurredAt}
-            onChange={(e) => setOccurredAt(e.target.value)}
+            onChange={(e) => handleOccurredAtChange(e.target.value)}
             InputLabelProps={{ shrink: true }}
             sx={{ width: { xs: '100%', sm: 240 } }}
           />

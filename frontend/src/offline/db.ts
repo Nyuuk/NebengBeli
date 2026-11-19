@@ -173,9 +173,9 @@ function matchesUser(entry: PendingOfflineEntry, targetUserId?: string | null): 
     targetUserId = activeUserId;
   }
   if (!targetUserId) {
-    return true;
+    return !entry.user_id;
   }
-  return !entry.user_id || entry.user_id === targetUserId;
+  return entry.user_id === targetUserId;
 }
 
 // ================= Offline Queue Operations =================
@@ -189,6 +189,30 @@ export async function queueOfflineEntry(entry: PendingOfflineEntry, userId?: str
     status: entry.status || 'pending',
   };
   await db.put('offline_entries', item);
+}
+
+export async function getUnassignedOfflineEntries(): Promise<PendingOfflineEntry[]> {
+  try {
+    const db = await getDB();
+    return (await db.getAll('offline_entries')).filter((entry) => !entry.user_id);
+  } catch {
+    return [];
+  }
+}
+
+/** Assigns an unowned legacy record only after an explicit owner selection. */
+export async function assignOfflineEntryUser(clientId: string, userId: string): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const db = await getDB();
+    const entry = await db.get('offline_entries', clientId);
+    if (!entry || entry.user_id) return false;
+    entry.user_id = userId;
+    await db.put('offline_entries', entry);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getPendingOfflineEntries(userId?: string): Promise<PendingOfflineEntry[]> {
@@ -230,12 +254,13 @@ export async function getPendingOfflineEntriesByWallet(walletId: string, userId?
   }
 }
 
-export async function removePendingOfflineEntry(clientId: string): Promise<void> {
+export async function removePendingOfflineEntry(clientId: string): Promise<boolean> {
   try {
     const db = await getDB();
     await db.delete('offline_entries', clientId);
+    return (await db.get('offline_entries', clientId)) === undefined;
   } catch {
-    // Ignore error
+    return false;
   }
 }
 
@@ -336,12 +361,8 @@ export async function getCachedWallets(scope = 'all', userId?: string): Promise<
     const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
     const key = getCacheKey(scope, targetUserId);
     let res = await db.get('cached_wallets', key);
-    if (!res && targetUserId) {
-      res = await db.get('cached_wallets', `default:${scope}`);
-    }
-    if (!res) {
-      res = await db.get('cached_wallets', scope);
-    }
+    if (!res && !targetUserId) res = await db.get('cached_wallets', scope);
+    if (res && targetUserId && res.user_id !== targetUserId) return null;
     if (!res) return null;
     return { wallets: res.wallets, cached_at: res.cached_at };
   } catch {
@@ -372,12 +393,8 @@ export async function getCachedStatement(walletId: string, userId?: string): Pro
     const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
     const key = getCacheKey(walletId, targetUserId);
     let res = await db.get('cached_statements', key);
-    if (!res && targetUserId) {
-      res = await db.get('cached_statements', `default:${walletId}`);
-    }
-    if (!res) {
-      res = await db.get('cached_statements', walletId);
-    }
+    if (!res && !targetUserId) res = await db.get('cached_statements', walletId);
+    if (res && targetUserId && res.user_id !== targetUserId) return null;
     if (!res) return null;
     return { data: res.data, cached_at: res.cached_at };
   } catch {
@@ -408,12 +425,8 @@ export async function getCachedSuggestions(walletId: string, userId?: string): P
     const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
     const key = getCacheKey(walletId, targetUserId);
     let res = await db.get('cached_suggestions', key);
-    if (!res && targetUserId) {
-      res = await db.get('cached_suggestions', `default:${walletId}`);
-    }
-    if (!res) {
-      res = await db.get('cached_suggestions', walletId);
-    }
+    if (!res && !targetUserId) res = await db.get('cached_suggestions', walletId);
+    if (res && targetUserId && res.user_id !== targetUserId) return null;
     if (!res) return null;
     return { suggestions: res.suggestions, cached_at: res.cached_at };
   } catch {
@@ -443,12 +456,8 @@ export async function getCachedInsights(id = 'creator', userId?: string): Promis
     const targetUserId = userId !== undefined ? userId : (activeUserId || undefined);
     const key = getCacheKey(id, targetUserId);
     let res = await db.get('cached_insights', key);
-    if (!res && targetUserId) {
-      res = await db.get('cached_insights', `default:${id}`);
-    }
-    if (!res) {
-      res = await db.get('cached_insights', id);
-    }
+    if (!res && !targetUserId) res = await db.get('cached_insights', id);
+    if (res && targetUserId && res.user_id !== targetUserId) return null;
     if (!res) return null;
     return { data: res.data, cached_at: res.cached_at };
   } catch {

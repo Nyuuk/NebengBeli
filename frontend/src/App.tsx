@@ -12,6 +12,7 @@ import { LinkRequestsPage } from './pages/LinkRequestsPage';
 import { AdminPage } from './pages/AdminPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { OfflineEntryReviewPage } from './pages/OfflineEntryReviewPage';
 import { ClaimUsernameModal } from './components/ClaimUsernameModal';
 
 const theme = createTheme({
@@ -101,6 +102,14 @@ export const App: React.FC = () => {
                 element={
                   <ProtectedRoute>
                     <WalletDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/offline-review"
+                element={
+                  <ProtectedRoute>
+                    <OfflineEntryReviewPage />
                   </ProtectedRoute>
                 }
               />

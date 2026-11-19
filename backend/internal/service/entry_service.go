@@ -401,15 +401,19 @@ func (s *entryService) CreateBatchEntries(ctx context.Context, userID uuid.UUID,
 			occurredAt = item.OccurredAt.UTC()
 		}
 
+		occurredAtProvided := (item.OccurredAt != nil && !item.OccurredAt.IsZero()) ||
+			(req.OccurredAt != nil && !req.OccurredAt.IsZero())
+
 		entriesToInsert = append(entriesToInsert, model.Entry{
-			ClientID:   clientID,
-			WalletID:   item.WalletID,
-			Type:       entryType,
-			Amount:     signedAmount,
-			ItemName:   item.ItemName,
-			Note:       item.Note,
-			OccurredAt: occurredAt,
-			CreatedBy:  userID,
+			ClientID:           clientID,
+			WalletID:           item.WalletID,
+			Type:               entryType,
+			Amount:             signedAmount,
+			ItemName:           item.ItemName,
+			Note:               item.Note,
+			OccurredAt:         occurredAt,
+			OccurredAtProvided: occurredAtProvided,
+			CreatedBy:          userID,
 		})
 
 		totalAmount += signedAmount

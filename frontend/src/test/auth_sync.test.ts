@@ -25,6 +25,7 @@ describe('Auth Renewal & Offline Sync Queue Replay', () => {
   });
 
   it('replays offline queue entries successfully with idempotency Client-ID', async () => {
+    setCurrentUserId('user-1');
     const entry: PendingOfflineEntry = {
       client_id: 'test-client-id-123',
       wallet_id: 'wallet-123',
@@ -70,6 +71,7 @@ describe('Auth Renewal & Offline Sync Queue Replay', () => {
   });
 
   it('handles server 400 rejection by marking entry failed and removing from pending queue', async () => {
+    setCurrentUserId('user-1');
     const entry: PendingOfflineEntry = {
       client_id: 'rejected-client-id',
       wallet_id: 'wallet-archived',
@@ -156,6 +158,7 @@ describe('Auth Renewal & Offline Sync Queue Replay', () => {
   });
 
   it('aborts sync without running sequential fallback when batch API returns HTTP 503', async () => {
+    setCurrentUserId('user-1');
     // Queue 2 standard titipan items
     await queueOfflineEntry({
       client_id: 'batch-c1',

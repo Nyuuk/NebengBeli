@@ -26,7 +26,8 @@ export function getSyncCooldownState(): { isSyncRunning: boolean; consecutiveSyn
 export async function syncOfflineQueue(
   userId?: string,
   onProgress?: (synced: number, total: number) => void,
-  force = false
+  force = false,
+  clientIds?: string[]
 ): Promise<{ synced: number; failed: number }> {
   if (isSyncRunning) {
     return { synced: 0, failed: 0 };
@@ -41,13 +42,17 @@ export async function syncOfflineQueue(
   let serverDownError = false;
   try {
     const targetUser = userId !== undefined ? userId : getCurrentUserId();
-    const rawPending = await getPendingOfflineEntries(targetUser || undefined);
-    if (!rawPending || rawPending.length === 0) {
+    // Never automatically sync unowned legacy records or run without an authenticated owner.
+    if (!targetUser) return { synced: 0, failed: 0 };
+    const rawPending = await getPendingOfflineEntries(targetUser);
+    const selectedIds = clientIds ? new Set(clientIds) : null;
+    const scopedPending = selectedIds ? rawPending.filter((entry) => selectedIds.has(entry.client_id)) : rawPending;
+    if (!scopedPending || scopedPending.length === 0) {
       return { synced: 0, failed: 0 };
     }
 
     // Sort strictly chronologically by occurred_at / created_at to guarantee correct ledger sequence
-    const pending = [...rawPending].sort((a, b) => {
+    const pending = [...scopedPending].sort((a, b) => {
       const timeA = new Date(a.occurred_at || a.created_at).getTime();
       const timeB = new Date(b.occurred_at || b.created_at).getTime();
       return timeA - timeB;
@@ -107,8 +112,9 @@ export async function syncOfflineQueue(
     }
 
     // Refresh remaining pending after batch attempt
-    const remainingPending = await getPendingOfflineEntries(targetUser || undefined);
-    const sortedRemaining = [...remainingPending].sort((a, b) => {
+    const remainingPending = await getPendingOfflineEntries(targetUser);
+    const scopedRemaining = selectedIds ? remainingPending.filter((entry) => selectedIds.has(entry.client_id)) : remainingPending;
+    const sortedRemaining = [...scopedRemaining].sort((a, b) => {
       const timeA = new Date(a.occurred_at || a.created_at).getTime();
       const timeB = new Date(b.occurred_at || b.created_at).getTime();
       return timeA - timeB;

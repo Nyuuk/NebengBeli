@@ -14,6 +14,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LinkIcon from '@mui/icons-material/Link';
 import LockResetIcon from '@mui/icons-material/LockReset';
+import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 export const Navbar: React.FC = () => {
@@ -52,6 +53,15 @@ export const Navbar: React.FC = () => {
 
         {user ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              color="inherit"
+              startIcon={<CloudSyncIcon />}
+              onClick={() => navigate('/offline-review')}
+              sx={{ textTransform: 'none', display: { xs: 'none', sm: 'inline-flex' } }}
+            >
+              Entri offline
+            </Button>
+
             <Button
               color="inherit"
               startIcon={<LinkIcon />}
@@ -103,6 +113,9 @@ export const Navbar: React.FC = () => {
                     Role: {user.role}
                   </Typography>
                 </Box>
+              </MenuItem>
+              <MenuItem onClick={() => { handleMenuClose(); navigate('/offline-review'); }}>
+                <CloudSyncIcon fontSize="small" sx={{ mr: 1 }} /> Review entri offline
               </MenuItem>
               <MenuItem onClick={() => { handleMenuClose(); navigate('/links'); }}>
                 <LinkIcon fontSize="small" sx={{ mr: 1 }} /> Kelola Undangan

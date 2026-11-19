@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,6 +98,9 @@ func TestCORSMiddlewareHeaders(t *testing.T) {
 	}
 	if w.Header().Get("Access-Control-Allow-Credentials") != "true" {
 		t.Errorf("expected CORS allow credentials true")
+	}
+	if !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Client-ID") {
+		t.Errorf("expected CORS allow headers to include Client-ID, got %s", w.Header().Get("Access-Control-Allow-Headers"))
 	}
 }
 
