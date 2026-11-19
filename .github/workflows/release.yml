@@ -9,6 +9,15 @@ on:
     tags:
       - 'v*'
       - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        type: choice
+        options:
+          - development
+          - production
 
 concurrency:
   group: release-${{ github.ref }}
@@ -21,8 +30,8 @@ permissions:
 
 jobs:
   release:
-    name: Build, Publish Images & Dispatch Deploy
-    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || github.event_name == 'push'
+    name: Build & Publish Images
+    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -30,17 +39,31 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Fetch notification credentials from Vault
+        uses: ./.github/actions/vault-secrets
+
       - name: Resolve Commit SHA and Image Tags
         id: meta
+        env:
+          VITE_API_URL_DEVELOPMENT: ${{ vars.VITE_API_URL_DEVELOPMENT }}
+          VITE_API_URL_PRODUCTION: ${{ vars.VITE_API_URL_PRODUCTION }}
         run: |
           FULL_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           TAG="sha-${FULL_SHA}"
-          if [[ "${{ github.event_name }}" == "push" ]]; then
+          if [[ "${{ github.event_name }}" == "push" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.environment }}" == "production" ) ]]; then
+            DEPLOY_ENVIRONMENT="production"
             TARGET_FOLDER="apps/nebengbeli/production"
             ROUTE_FILE="apps/http-route/nebengbeli-production.yaml"
+            API_URL="$VITE_API_URL_PRODUCTION"
           else
+            DEPLOY_ENVIRONMENT="development"
             TARGET_FOLDER="apps/nebengbeli"
             ROUTE_FILE="apps/http-route/nebengbeli.yaml"
+            API_URL="$VITE_API_URL_DEVELOPMENT"
+          fi
+          if [[ -z "$API_URL" ]]; then
+            echo "::error::VITE_API_URL is not configured for ${DEPLOY_ENVIRONMENT}"
+            exit 1
           fi
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           
@@ -53,6 +76,8 @@ jobs:
           echo "frontend_image=${FRONTEND_IMAGE}" >> $GITHUB_OUTPUT
           echo "target_folder=${TARGET_FOLDER}" >> $GITHUB_OUTPUT
           echo "route_file=${ROUTE_FILE}" >> $GITHUB_OUTPUT
+          echo "deploy_environment=${DEPLOY_ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "api_url=${API_URL}" >> $GITHUB_OUTPUT
           
           echo "Resolved Tag: ${TAG}"
           echo "Backend Image: ${BACKEND_IMAGE}"
@@ -92,50 +117,80 @@ jobs:
           tags: ${{ steps.meta.outputs.frontend_image }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+          build-args: |
+            VITE_API_URL=${{ steps.meta.outputs.api_url }}
 
-      # Cross-Repository Dispatch Authorization:
-      # Fetches GITHUB_TOKEN from HashiCorp Vault via GitHub OIDC JWT auth (matching My App pattern),
-      # avoiding static repository secrets. Fails closed if GITHUB_TOKEN is unset or empty.
-      - name: Fetch secrets from Vault
-        uses: ./.github/actions/vault-secrets
-
-      - name: Verify GitHub Token
+      # Deployment dispatch intentionally disabled for now; uncomment to resume kube-config deployments.
+      # - name: Verify GitHub Token
+      #   run: |
+      #     if [ -z "${GITHUB_TOKEN:-}" ]; then
+      #       echo "::error::GITHUB_TOKEN is unset or empty after fetching from Vault"
+      #       exit 1
+      #     fi
+      #
+      # - name: Dispatch Deploy Event to Nyuuk/kube-config
+      #   uses: actions/github-script@v7
+      #   with:
+      #     github-token: ${{ env.GITHUB_TOKEN }}
+      #     script: |
+      #       const fullSha = '${{ steps.meta.outputs.full_sha }}';
+      #       const tag = `sha-${fullSha}`;
+      #       const images = {
+      #         "backend.yaml": { backend: tag },
+      #         "frontend.yaml": { frontend: tag }
+      #       };
+      #       const targetFolder = '${{ steps.meta.outputs.target_folder }}';
+      #       await github.rest.repos.createDispatchEvent({
+      #         owner: 'Nyuuk',
+      #         repo: 'kube-config',
+      #         event_type: 'deploy',
+      #         client_payload: {
+      #           images: JSON.stringify(images),
+      #           target_folder: targetFolder
+      #         }
+      #       });
+      #
+      - name: Send Telegram Notification for Success
+        if: success()
+        env:
+          DEPLOY_ENVIRONMENT: ${{ steps.meta.outputs.deploy_environment }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
         run: |
-          if [ -z "${GITHUB_TOKEN:-}" ]; then
-            echo "::error::GITHUB_TOKEN is unset or empty after fetching from Vault"
-            exit 1
-          fi
+          MESSAGE="✅ *NebengBeli image build success*
 
-      - name: Dispatch Deploy Event to Nyuuk/kube-config
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ env.GITHUB_TOKEN }}
-          script: |
-            const fullSha = '${{ steps.meta.outputs.full_sha }}';
-            const tag = `sha-${fullSha}`;
+          *Environment:* \`${DEPLOY_ENVIRONMENT}\`
+          *Repository:* \`${GITHUB_REPOSITORY}\`
+          *Commit:* [${{ steps.meta.outputs.full_sha }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${{ steps.meta.outputs.full_sha }})
+          *Image tag:* \`${IMAGE_TAG}\`
+          *Backend:* \`${{ steps.meta.outputs.backend_image }}\`
+          *Frontend:* \`${{ steps.meta.outputs.frontend_image }}\`"
 
-            // Nested images payload matching Nyuuk/kube-config cd.yaml multi-file update contract
-            const images = {
-              "backend.yaml": {
-                "backend": tag
-              },
-              "frontend.yaml": {
-                "frontend": tag
-              }
-            };
+          curl --fail --silent --show-error --request POST \
+            "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "message_thread_id=${TELEGRAM_TOPIC_ID}" \
+            --data-urlencode "parse_mode=Markdown" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=$MESSAGE"
 
-            const targetFolder = '${{ steps.meta.outputs.target_folder }}';
-            console.log(`Dispatching deployment to Nyuuk/kube-config (target_folder: ${targetFolder})...`);
-            console.log(`Payload images:`, JSON.stringify(images, null, 2));
+      - name: Send Telegram Notification for Failure
+        if: failure()
+        env:
+          DEPLOY_ENVIRONMENT: ${{ steps.meta.outputs.deploy_environment }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          MESSAGE="❌ *NebengBeli image build failed*
 
-            await github.rest.repos.createDispatchEvent({
-              owner: 'Nyuuk',
-              repo: 'kube-config',
-              event_type: 'deploy',
-              client_payload: {
-                images: JSON.stringify(images),
-                target_folder: targetFolder
-              }
-            });
+          *Environment:* \`${DEPLOY_ENVIRONMENT:-unknown}\`
+          *Repository:* \`${GITHUB_REPOSITORY}\`
+          *Commit:* [${{ steps.meta.outputs.full_sha }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${{ steps.meta.outputs.full_sha }})
+          *Image tag:* \`${IMAGE_TAG:-unknown}\`
+          *Workflow:* [View run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
 
-            console.log('Successfully dispatched deploy event to Nyuuk/kube-config');
+          curl --fail --silent --show-error --request POST \
+            "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "message_thread_id=${TELEGRAM_TOPIC_ID}" \
+            --data-urlencode "parse_mode=Markdown" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=$MESSAGE"

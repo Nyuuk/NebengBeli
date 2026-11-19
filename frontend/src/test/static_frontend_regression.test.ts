@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
+import { normalizeApiBaseUrl } from '../api/client';
 import * as fsModule from 'fs';
 import * as pathModule from 'path';
 
@@ -12,12 +13,25 @@ describe('Frontend Static-Only & API Client Regression Suite', () => {
   const repoRoot = path.resolve(rootDir, '..');
   const frontendRoot = rootDir;
 
-  it('verifies that client.ts uses relative API_BASE_URL and relative request paths', () => {
+  it('verifies that client.ts configures API_BASE_URL from VITE_API_URL and trims trailing slashes', () => {
     const clientPath = path.resolve(frontendRoot, 'src/api/client.ts');
     const clientCode = fs.readFileSync(clientPath, 'utf-8');
 
-    // Check that API_BASE_URL is empty string (relative URL)
-    expect(clientCode).toMatch(/const\s+API_BASE_URL\s*=\s*['"]['"]/);
+    expect(clientCode).toContain("import.meta.env.VITE_API_URL ?? ''");
+    expect(clientCode).toContain(".replace(/\\/+$/, '')");
+    expect(clientCode).toContain('normalizeApiBaseUrl(import.meta.env.VITE_API_URL ?? \'\')');
+    expect(clientCode).toContain('`${API_BASE_URL}${path}`');
+    expect(normalizeApiBaseUrl('https://dev-nebengbeli.kangoprek.my.id/api')).toBe('https://dev-nebengbeli.kangoprek.my.id');
+    expect(normalizeApiBaseUrl('https://dev-nebengbeli.kangoprek.my.id/api/')).toBe('https://dev-nebengbeli.kangoprek.my.id');
+    expect(normalizeApiBaseUrl('')).toBe('');
+  });
+
+  it('verifies CSV export URLs use the configured API base while preserving relative defaults', () => {
+    const statementsPath = path.resolve(frontendRoot, 'src/api/statements.ts');
+    const statementsCode = fs.readFileSync(statementsPath, 'utf-8');
+
+    expect(statementsCode).toContain('import { API_BASE_URL, request } from \'./client\'');
+    expect(statementsCode).toContain('`${API_BASE_URL}/api/wallets/${walletId}/statement/export');
   });
 
   it('verifies all API modules use relative /api/ endpoints', () => {

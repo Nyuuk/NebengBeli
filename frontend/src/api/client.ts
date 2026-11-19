@@ -1,6 +1,10 @@
 import { isAppOnline, isSimulatedOffline } from '../offline/networkMode';
 
-const API_BASE_URL = ''; // Relative path leverages Vite dev proxy / Nginx reverse proxy
+export function normalizeApiBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL ?? '');
 
 export class ApiError extends Error {
   status: number;

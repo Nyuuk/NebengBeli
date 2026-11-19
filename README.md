@@ -45,6 +45,7 @@ Built with **Go Gin Backend**, **React Vite + Material UI PWA Frontend**, and **
    make docker-up
    # or: docker compose up --build -d
    ```
+   By default, the frontend uses relative `/api` URLs, served through the Vite dev proxy during local development or your deployment's routing setup. To build the frontend against a separately hosted backend, set `VITE_API_URL` to its origin/base URL (for example, `https://api.example.com`) before building. This is a build-time setting; Docker Compose passes it as the frontend image's `VITE_API_URL` build argument. Trailing slashes are removed. For local Vite development, set `VITE_API_URL` in `frontend/.env.local`; leave it unset to use the `/api` proxy to `http://localhost:8080`.
 
 4. Open your browser:
    - Frontend App: [http://localhost](http://localhost) (or configured port, e.g. `http://localhost:8088`)

@@ -1,4 +1,4 @@
-import { request } from './client';
+import { API_BASE_URL, request } from './client';
 import { EntryType, StatementResponse } from '../types';
 
 export interface StatementFilterParams {
@@ -37,5 +37,5 @@ export function getExportCSVUrl(walletId: string, params: StatementFilterParams 
   if (params.end_date) searchParams.set('end_date', params.end_date);
 
   const qs = searchParams.toString();
-  return `/api/wallets/${walletId}/statement/export${qs ? `?${qs}` : ''}`;
+  return `${API_BASE_URL}/api/wallets/${walletId}/statement/export${qs ? `?${qs}` : ''}`;
 }

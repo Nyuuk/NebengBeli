@@ -8,7 +8,9 @@ RUN npm ci
 
 COPY frontend/ ./
 ARG VITE_E2E_MODE=false
+ARG VITE_API_URL=
 ENV VITE_E2E_MODE=$VITE_E2E_MODE
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 
