@@ -69,29 +69,30 @@ docker run --rm \
 
 ## 2. Container Image Contract
 
-Images are built and published to GitHub Container Registry (GHCR) upon successful CI on the `main` branch:
+Images are built and published to GitHub Container Registry (GHCR) after successful CI on the `main` branch, on `vMAJOR.MINOR.PATCH` version-tag pushes (optional `-prerelease` suffix), and by manual dispatch (which can optionally target an existing version tag):
 
 | Component | Registry & Image Path | Tag Contract |
 | :--- | :--- | :--- |
-| **Backend** | `ghcr.io/nyuuk/nebengbeli/backend` | `sha-${FULL_GIT_SHA}` (40-char SHA) |
-| **Frontend** | `ghcr.io/nyuuk/nebengbeli/frontend` | `sha-${FULL_GIT_SHA}` (40-char SHA) |
+| **Backend** | `ghcr.io/nyuuk/nebengbeli/backend` | Always `sha-${FULL_GIT_SHA}` (40-char SHA); version-tag pushes also publish the release tag and `latest` |
+| **Frontend** | `ghcr.io/nyuuk/nebengbeli/frontend` | Always `sha-${FULL_GIT_SHA}` (40-char SHA); version-tag pushes also publish the release tag and `latest` |
 
 > [!IMPORTANT]
-> **No `latest` tags**: All production images are strictly pinned to immutable `sha-${FULL_GIT_SHA}` tags to ensure deterministic deployments and rollback stability.
+> The SHA tag remains the immutable deployment reference. Version-tag pushes and manual dispatches targeting a version tag publish `latest`; successful CI builds and manual dispatches without a release tag publish the SHA tag only.
 
 ---
 
 ## 3. Continuous Deployment (CD) & Repository Dispatch Contract
 
 ### Release Workflow (`.github/workflows/release.yml`)
-- **Trigger**: Automatically executes on `workflow_run` completion when the `CI` workflow succeeds on branch `main` (or via manual `workflow_dispatch`).
-- **Permissions**: Minimum required permissions (`contents: read`, `packages: write`, `id-token: write` for GitHub OIDC authentication to HashiCorp Vault).
-- **Secrets Management**: No static repository secrets or manual PATs are stored in repository settings. The workflow invokes `.github/actions/vault-secrets` to authenticate against HashiCorp Vault via GitHub OIDC JWT auth (`path: jwt-github`, `role: nyuuk`) and dynamically exports `GITHUB_TOKEN` into `GITHUB_ENV`.
-- **Fail-Closed Security**: The workflow explicitly validates that `GITHUB_TOKEN` is non-empty before initiating dispatch, failing immediately if Vault token retrieval fails.
+
+- **Trigger**: Executes when the `CI` workflow succeeds on branch `main`, on `vMAJOR.MINOR.PATCH` tag pushes (optional `-prerelease` suffix), or via manual `workflow_dispatch`. Version-tag pushes use the production environment; manual dispatch selects development or production.
+- **Permissions**: `contents: read`, `packages: write`, and `id-token: write` for GitHub OIDC authentication.
+- **Secrets Management**: The workflow loads notification credentials through `.github/actions/vault-secrets`.
 - **Concurrency**: Grouped by `release-${{ github.ref }}` with `cancel-in-progress: false` to prevent overlapping releases.
 
-### Dispatch Event Payload Specification
-Upon successful build and push of backend and frontend images, the workflow emits a single `repository_dispatch` event to `Nyuuk/kube-config`:
+### Future Kubernetes Dispatch Contract (currently disabled)
+
+The following describes the intended integration only. Current workflow does **not** call `repository_dispatch`, validate a deployment token, or update Kubernetes manifests. Re-enable and validate this integration before relying on automatic deployment.
 
 - **Event Type**: `deploy`
 - **Target Repository**: `Nyuuk/kube-config`
@@ -104,12 +105,12 @@ Upon successful build and push of backend and frontend images, the workflow emit
   }
   ```
 
-This nested JSON structure allows `kube-config/.github/workflows/cd.yaml` to update both `backend.yaml` and `frontend.yaml` container images in a single atomic Git commit, preventing git race conditions.
+If re-enabled, this payload is intended for kube-config to update both image references in a single commit.
 
 ### Migration/Server Startup Ordering (required kube-config correction)
 The Job invocation above is the exact contract: `exec /app/nebengbeli-cli migrate`; the backend image's default entrypoint remains `/app/nebengbeli-server`. The server currently also runs `database.RunMigrations` before binding HTTP, so the application is safe if the Job and server start concurrently (the migration transaction and `schema_migrations` primary key prevent a successful duplicate version record). However, the CD workflow must not treat the Job as complete merely because the Job manifest was applied: Atlas must make the deployment orchestration wait for the migration Job to reach `Complete` (and fail on `Failed`) before declaring the backend rollout ready. This is a required kube-config change; this application PR does not modify kube-config or disable the server safety fallback.
 
-### Cross-Repository Authorization Contract
-The release workflow dispatches the deploy event using `github-token: ${{ env.GITHUB_TOKEN }}` obtained dynamically from HashiCorp Vault via GitHub Actions OIDC JWT auth matching the My App action pattern (`.github/actions/vault-secrets`).
+### Cross-Repository Authorization (future dispatch; currently disabled)
+If deployment dispatch is re-enabled, the intended authorization uses a GitHub token obtained dynamically from HashiCorp Vault via GitHub Actions OIDC JWT auth.
 - No GitHub repository secrets or static personal access tokens (PATs) are required or configured in the repository.
 - Cross-repository access to `Nyuuk/kube-config` is authorized via the Vault-managed GitHub token.
