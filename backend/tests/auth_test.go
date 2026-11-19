@@ -249,6 +249,9 @@ func TestLocalHTTPAuthCookieAndListLinks(t *testing.T) {
 	if strings.Contains(setCookieHdr, "Secure") {
 		t.Errorf("expected NO Secure flag on local HTTP cookie, got: %s", setCookieHdr)
 	}
+	if !strings.Contains(setCookieHdr, "SameSite=Lax") {
+		t.Errorf("expected SameSite=Lax for insecure local cookie, got: %s", setCookieHdr)
+	}
 
 	// Extract the cookie
 	cookies := wLogin.Result().Cookies()
@@ -310,6 +313,10 @@ func TestLocalHTTPAuthCookieAndListLinks(t *testing.T) {
 	if !strings.Contains(prodCookieHdr, "Secure") {
 		t.Errorf("expected Secure attribute in production Set-Cookie header, got: %s", prodCookieHdr)
 	}
+	if !strings.Contains(prodCookieHdr, "SameSite=None") {
+		t.Errorf("expected SameSite=None for cross-site production cookie, got: %s", prodCookieHdr)
+	}
+
 
 	// Step E: Ensure token validation integrity is maintained (not weakened)
 	// E1. No cookie and no Authorization header -> 401

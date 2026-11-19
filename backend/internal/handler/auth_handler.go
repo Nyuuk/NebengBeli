@@ -210,7 +210,7 @@ func (h *AuthHandler) UpdateUsername(c *gin.Context) {
 
 func (h *AuthHandler) setAuthCookie(c *gin.Context, token string) {
 	maxAge := int(h.cfg.JWTExpiry.Seconds())
-	c.SetSameSite(http.SameSiteLaxMode)
+	h.setAuthCookieSameSite(c)
 	c.SetCookie(
 		middleware.CookieTokenKey,
 		token,
@@ -223,7 +223,7 @@ func (h *AuthHandler) setAuthCookie(c *gin.Context, token string) {
 }
 
 func (h *AuthHandler) clearAuthCookie(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
+	h.setAuthCookieSameSite(c)
 	c.SetCookie(
 		middleware.CookieTokenKey,
 		"",
@@ -233,4 +233,12 @@ func (h *AuthHandler) clearAuthCookie(c *gin.Context) {
 		h.cfg.CookieSecure,
 		true,
 	)
+}
+
+func (h *AuthHandler) setAuthCookieSameSite(c *gin.Context) {
+	if h.cfg.CookieSecure {
+		c.SetSameSite(http.SameSiteNoneMode)
+		return
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
 }
