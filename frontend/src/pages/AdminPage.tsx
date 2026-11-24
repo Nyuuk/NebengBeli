@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -32,6 +32,7 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import KeyIcon from '@mui/icons-material/Key';
 import { Layout } from '../components/Layout';
 import { ResponsiveTabs } from '../components/ResponsiveTabs';
+import { TablePaginationBar } from '../components/TablePaginationBar';
 import { formatRupiah } from '../components/BalanceCard';
 import {
   adminGetStatsApi,
@@ -58,6 +59,11 @@ import {
 export const AdminPage: React.FC = () => {
   const [tab, setTab] = useState<number>(0);
   const [trendSubTab, setTrendSubTab] = useState<number>(0);
+  const [pagination, setPagination] = useState(() => Array.from({ length: 6 }, () => ({ page: 1, pageSize: 50, total: 0 })));
+  const requestSeqRef = useRef(0);
+  const [expandedMeta, setExpandedMeta] = useState<Record<string, boolean>>({});
+  const [tabError, setTabError] = useState<Record<number, string | null>>({});
+  const [resetError, setResetError] = useState<string | null>(null);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -76,35 +82,58 @@ export const AdminPage: React.FC = () => {
   const [newPassword, setNewPassword] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const fetchData = useCallback(async () => {
+  const isServerPaginated = tab === 0 || tab === 1 || tab === 2 || tab === 5;
+  const activePage = isServerPaginated ? pagination[tab].page : 1;
+  const activePageSize = isServerPaginated ? pagination[tab].pageSize : 50;
+
+  const fetchData = useCallback(async (silent = false) => {
+    const seq = ++requestSeqRef.current;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
+      setTabError((e) => ({ ...e, [tab]: null }));
 
       if (tab === 0) {
         const [statsData, usersData] = await Promise.all([
           adminGetStatsApi(),
-          adminListUsersApi(50, 0),
+          adminListUsersApi(activePageSize, (activePage - 1) * activePageSize),
         ]);
+        if (seq !== requestSeqRef.current) return;
         setStats(statsData?.stats || null);
         setUsers(usersData?.users || []);
+        setPagination((p) => p.map((x, i) => i === tab && x.total !== (usersData?.total ?? 0) ? { ...x, total: usersData?.total ?? 0 } : x));
       } else if (tab === 1) {
-        const walletsData = await adminListWalletsApi(50, 0);
+        const walletsData = await adminListWalletsApi(activePageSize, (activePage - 1) * activePageSize);
+        if (seq !== requestSeqRef.current) return;
         setWallets(walletsData?.wallets || []);
+        setPagination((p) => p.map((x, i) => i === tab && x.total !== (walletsData?.total ?? 0) ? { ...x, total: walletsData?.total ?? 0 } : x));
       } else if (tab === 2) {
         try {
-          const [entriesData, summaryData] = await Promise.all([
-            adminListEntriesApi({ limit: 50, offset: 0 }),
-            adminGetSummaryApi(),
-          ]);
+          const entriesData = await adminListEntriesApi({ limit: activePageSize, offset: (activePage - 1) * activePageSize });
+          if (seq !== requestSeqRef.current) return;
           setEntries(entriesData?.entries || []);
-          setEntriesSummary(summaryData?.summary || entriesData?.summary || null);
+          setPagination((p) => p.map((x, i) => i === tab && x.total !== (entriesData?.total ?? 0) ? { ...x, total: entriesData?.total ?? 0 } : x));
+          let summary = entriesData?.summary || null;
+          if (!summary) {
+            try {
+              const summaryData = await adminGetSummaryApi();
+              if (seq !== requestSeqRef.current) return;
+              summary = summaryData.summary || null;
+            } catch {
+              if (seq !== requestSeqRef.current) return;
+              /* summary optional */
+            }
+          }
+          if (seq !== requestSeqRef.current) return;
+          setEntriesSummary(summary);
         } catch (err: unknown) {
           const apiErr = err as { status?: number; message?: string };
           if (apiErr.status === 404) {
+            if (seq !== requestSeqRef.current) return;
             // Backwards compatibility fallback if backend does not support admin entries endpoint
             setEntries([]);
             setEntriesSummary(null);
+            updateTabPagination(tab, { total: 0, page: 1 });
           } else {
             throw err;
           }
@@ -112,12 +141,16 @@ export const AdminPage: React.FC = () => {
       } else if (tab === 3) {
         try {
           const creatorsData = await adminListCreatorsApi();
+          if (seq !== requestSeqRef.current) return;
           setCreators(creatorsData?.creators || []);
+          setPagination((p) => p.map((x, i) => i === tab && x.total !== (creatorsData?.total ?? creatorsData.creators.length) ? { ...x, total: creatorsData?.total ?? creatorsData.creators.length } : x));
         } catch (err: unknown) {
           const apiErr = err as { status?: number; message?: string };
           if (apiErr.status === 404) {
+            if (seq !== requestSeqRef.current) return;
             // Backwards compatibility fallback
             setCreators([]);
+            updateTabPagination(tab, { total: 0, page: 1 });
           } else {
             throw err;
           }
@@ -125,10 +158,12 @@ export const AdminPage: React.FC = () => {
       } else if (tab === 4) {
         try {
           const trendsData = await adminGetTrendsApi();
+          if (seq !== requestSeqRef.current) return;
           setTrends(trendsData?.trends || null);
         } catch (err: unknown) {
           const apiErr = err as { status?: number; message?: string };
           if (apiErr.status === 404) {
+            if (seq !== requestSeqRef.current) return;
             // Backwards compatibility fallback
             setTrends(null);
           } else {
@@ -136,25 +171,49 @@ export const AdminPage: React.FC = () => {
           }
         }
       } else if (tab === 5) {
-        const auditsData = await adminListAuditLogsApi({ limit: 50, offset: 0 });
+        const auditsData = await adminListAuditLogsApi({ limit: activePageSize, offset: (activePage - 1) * activePageSize });
+        if (seq !== requestSeqRef.current) return;
         setAuditLogs(auditsData?.audit_logs || []);
+        setPagination((p) => p.map((x, i) => i === tab && x.total !== (auditsData?.total ?? 0) ? { ...x, total: auditsData?.total ?? 0 } : x));
       }
     } catch (err: unknown) {
+      if (seq !== requestSeqRef.current) return;
       const apiErr = err as { message?: string };
-      setError(apiErr.message || 'Gagal memuat data admin.');
+      const msg = apiErr.message || 'Gagal memuat data admin.';
+      setTabError((e) => ({ ...e, [tab]: msg }));
+      if (tab === 0) setUsers([]); else if (tab === 1) setWallets([]); else if (tab === 2) { setEntries([]); setEntriesSummary(null); } else if (tab === 3) setCreators([]); else if (tab === 4) setTrends(null); else if (tab === 5) setAuditLogs([]);
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current && !silent) setLoading(false);
     }
-  }, [tab]);
+  }, [tab, activePage, activePageSize]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(pagination[tab].total / pagination[tab].pageSize));
+    if (pagination[tab].page > totalPages) {
+      setPagination((p) => p.map((x, i) => i === tab ? { ...x, page: totalPages } : x));
+    }
+  }, [tab, pagination]);
+
+  const updateTabPagination = (index: number, values: Partial<(typeof pagination)[number]>) => {
+    setPagination((p) => p.map((x, i) => i === index ? { ...x, ...values } : x));
+  };
+
+  const paginationBar = (index: number) => (
+    <TablePaginationBar {...pagination[index]} loading={loading} onPageChange={(page) => setPagination((p) => p.map((x, i) => i === index ? { ...x, page } : x))} onPageSizeChange={(pageSize) => setPagination((p) => p.map((x, i) => i === index ? { ...x, pageSize, page: 1 } : x))} />
+  );
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetUsername || !newPassword) return;
+    if (!resetUsername) return;
+    if (newPassword.length < 6) { setResetError('Password minimal 6 karakter.'); return; }
 
+    setResetError(null);
+    setError(null);
+    setMessage(null);
     setIsSubmitting(true);
     try {
       await adminResetPasswordApi(resetUsername, newPassword);
@@ -162,10 +221,10 @@ export const AdminPage: React.FC = () => {
       setOpenReset(false);
       setResetUsername('');
       setNewPassword('');
-      fetchData();
+      fetchData(users.length > 0);
     } catch (err: unknown) {
       const apiErr = err as { message?: string };
-      setError(apiErr.message || 'Gagal mereset password.');
+      setResetError(apiErr.message || 'Gagal mereset password.');
     } finally {
       setIsSubmitting(false);
     }
@@ -174,7 +233,7 @@ export const AdminPage: React.FC = () => {
   return (
     <Layout>
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>
           Admin & System Control Panel
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -197,7 +256,7 @@ export const AdminPage: React.FC = () => {
       {stats && (
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2 }}>
+            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <PeopleIcon sx={{ fontSize: 40, color: 'primary.main' }} />
                 <Box>
@@ -209,7 +268,7 @@ export const AdminPage: React.FC = () => {
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2 }}>
+            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <AccountBalanceWalletIcon sx={{ fontSize: 40, color: '#0288d1' }} />
                 <Box>
@@ -221,7 +280,7 @@ export const AdminPage: React.FC = () => {
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2 }}>
+            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <ReceiptLongIcon sx={{ fontSize: 40, color: '#388e3c' }} />
                 <Box>
@@ -233,12 +292,12 @@ export const AdminPage: React.FC = () => {
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2 }}>
+            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <SecurityIcon sx={{ fontSize: 40, color: '#f57c00' }} />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Volume Perputaran</Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatRupiah(stats.total_volume)}</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 800 }}>{formatRupiah(stats.total_volume)}</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -258,17 +317,19 @@ export const AdminPage: React.FC = () => {
         </ResponsiveTabs>
       </Box>
 
-      {loading ? (
+      {loading && !tabError[tab] ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
           <CircularProgress />
         </Box>
+      ) : tabError[tab] ? (
+        <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => fetchData()}>Coba Lagi</Button>}>{tabError[tab]}</Alert>
       ) : (
         <>
           {/* TAB 0: USERS */}
           {tab === 0 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
-                <Table>
+                <Table sx={{ minWidth: 650 }}>
                   <TableHead sx={{ bgcolor: '#f1f5f9' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
@@ -280,9 +341,9 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {users.map((u) => (
+                    {users.length === 0 ? <TableRow><TableCell colSpan={6} align="center">Tidak ada data pengguna.</TableCell></TableRow> : users.map((u) => (
                       <TableRow key={u.id} hover>
-                        <TableCell><code>{u.id.substring(0, 8)}...</code></TableCell>
+                        <TableCell><code style={{ whiteSpace: 'nowrap' }}>{u.id.substring(0, 8)}...</code></TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>{u.username}</TableCell>
                         <TableCell>
                           <Chip
@@ -291,7 +352,7 @@ export const AdminPage: React.FC = () => {
                             color={u.role === 'admin' ? 'secondary' : 'default'}
                           />
                         </TableCell>
-                        <TableCell>{(u as { token_version?: number }).token_version || 1}</TableCell>
+                        <TableCell>{u.token_version ?? 1}</TableCell>
                         <TableCell>
                           {new Date(u.created_at).toLocaleDateString('id-ID', {
                             day: '2-digit',
@@ -303,6 +364,7 @@ export const AdminPage: React.FC = () => {
                           <Button
                             size="small"
                             variant="outlined"
+                            sx={{ whiteSpace: 'nowrap' }}
                             startIcon={<KeyIcon />}
                             onClick={() => {
                               setResetUsername(u.username);
@@ -317,6 +379,7 @@ export const AdminPage: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              {paginationBar(0)}
             </Paper>
           )}
 
@@ -324,7 +387,7 @@ export const AdminPage: React.FC = () => {
           {tab === 1 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
-                <Table>
+                <Table sx={{ minWidth: 650 }}>
                   <TableHead sx={{ bgcolor: '#f1f5f9' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
@@ -336,9 +399,9 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {wallets.map((w) => (
+                    {wallets.length === 0 ? <TableRow><TableCell colSpan={6} align="center">Tidak ada data buku.</TableCell></TableRow> : wallets.map((w) => (
                       <TableRow key={w.id} hover>
-                        <TableCell><code>{w.id.substring(0, 8)}...</code></TableCell>
+                        <TableCell><code style={{ whiteSpace: 'nowrap' }}>{w.id.substring(0, 8)}...</code></TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>{w.name}</TableCell>
                         <TableCell>{w.creator_username}</TableCell>
                         <TableCell>{w.owner_username || '(unlinked)'}</TableCell>
@@ -355,6 +418,7 @@ export const AdminPage: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              {paginationBar(1)}
             </Paper>
           )}
 
@@ -364,7 +428,7 @@ export const AdminPage: React.FC = () => {
               {entriesSummary && (
                 <Grid container spacing={2} sx={{ mb: 2.5 }}>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
                       <Typography variant="caption" color="text.secondary">Total Transaksi Titipan</Typography>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
                         {formatRupiah(Math.abs(entriesSummary.total_titipan_amount))} ({entriesSummary.total_titipan_count})
@@ -372,7 +436,7 @@ export const AdminPage: React.FC = () => {
                     </Paper>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
                       <Typography variant="caption" color="text.secondary">Total Pembayaran Top-up</Typography>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: '#0288d1' }}>
                         {formatRupiah(Math.abs(entriesSummary.total_topup_amount))} ({entriesSummary.total_topup_count})
@@ -380,7 +444,7 @@ export const AdminPage: React.FC = () => {
                     </Paper>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
                       <Typography variant="caption" color="text.secondary">Total Penyesuaian Koreksi</Typography>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: '#f57c00' }}>
                         {formatRupiah(entriesSummary.total_koreksi_amount)} ({entriesSummary.total_koreksi_count})
@@ -388,11 +452,10 @@ export const AdminPage: React.FC = () => {
                     </Paper>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
                       <Typography variant="caption" color="text.secondary">Saldo Bersih / Total Volume</Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#388e3c' }}>
-                        {formatRupiah(entriesSummary.net_balance)} / {formatRupiah(entriesSummary.total_volume)}
-                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#388e3c' }}>{formatRupiah(entriesSummary.net_balance)}</Typography>
+                      <Typography variant="body2" color="text.secondary">Volume: {formatRupiah(entriesSummary.total_volume)}</Typography>
                     </Paper>
                   </Grid>
                 </Grid>
@@ -400,7 +463,7 @@ export const AdminPage: React.FC = () => {
 
               <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 <TableContainer>
-                  <Table>
+                  <Table sx={{ minWidth: 650 }}>
                     <TableHead sx={{ bgcolor: '#f1f5f9' }}>
                       <TableRow>
                         <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
@@ -422,25 +485,21 @@ export const AdminPage: React.FC = () => {
                       ) : (
                         entries.map((e) => (
                           <TableRow key={e.id} hover>
-                            <TableCell><code>{e.id.substring(0, 8)}...</code></TableCell>
-                            <TableCell sx={{ fontWeight: 600 }}>{e.item_name || '-'}</TableCell>
+                            <TableCell><code style={{ whiteSpace: 'nowrap' }}>{e.id.substring(0, 8)}...</code></TableCell>
+                            <TableCell sx={{ fontWeight: 600 }}><Box><Typography sx={{ fontWeight: 600 }}>{e.item_name || '-'}</Typography>{e.note && <Typography variant="caption" color="text.secondary" display="block">{e.note}</Typography>}</Box></TableCell>
                             <TableCell>{e.wallet_name || (e.wallet_id ? `${e.wallet_id.substring(0, 8)}...` : '-')}</TableCell>
                             <TableCell>{e.created_by_username || '-'}</TableCell>
                             <TableCell>
                               <Chip
-                                label={e.type}
+                                label={e.type === 'titipan' ? 'Titipan' : e.type === 'topup' ? 'Top-up / Bayar' : 'Koreksi'}
                                 size="small"
                                 color={
-                                  e.type === 'titipan'
-                                    ? 'default'
-                                    : e.type === 'topup'
-                                    ? 'info'
-                                    : 'warning'
+                                  e.type === 'titipan' ? 'error' : e.type === 'topup' ? 'success' : 'warning'
                                 }
                               />
                             </TableCell>
                             <TableCell align="right" sx={{ fontWeight: 700 }}>
-                              {formatRupiah(e.amount)}
+                              {formatRupiah(e.effective_amount ?? e.amount)}{e.effective_amount !== undefined && e.effective_amount !== e.amount && <Typography variant="caption" display="block" color="text.secondary">Koreksi dari {formatRupiah(e.amount)}</Typography>}
                             </TableCell>
                             <TableCell>
                               <Typography variant="caption">
@@ -459,6 +518,7 @@ export const AdminPage: React.FC = () => {
                     </TableBody>
                   </Table>
                 </TableContainer>
+                {paginationBar(2)}
               </Paper>
             </Box>
           )}
@@ -467,7 +527,7 @@ export const AdminPage: React.FC = () => {
           {tab === 3 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
-                <Table>
+                <Table sx={{ minWidth: 650 }}>
                   <TableHead sx={{ bgcolor: '#f1f5f9' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>Pembuat (Creator)</TableCell>
@@ -480,14 +540,14 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {creators.length === 0 ? (
+                    {creators.slice((pagination[3].page - 1) * pagination[3].pageSize, pagination[3].page * pagination[3].pageSize).length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                           Tidak ada data pembuat.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      creators.map((c) => (
+                      creators.slice((pagination[3].page - 1) * pagination[3].pageSize, pagination[3].page * pagination[3].pageSize).map((c) => (
                         <TableRow key={c.creator_id} hover>
                           <TableCell sx={{ fontWeight: 600 }}>{c.username}</TableCell>
                           <TableCell align="center">{c.total_wallets}</TableCell>
@@ -497,7 +557,7 @@ export const AdminPage: React.FC = () => {
                           <TableCell align="right">{formatRupiah(Math.abs(c.total_titipan_amount))}</TableCell>
                           <TableCell align="right">{formatRupiah(Math.abs(c.total_topup_amount))}</TableCell>
                           <TableCell align="right">{formatRupiah(c.total_koreksi_amount)}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                          <TableCell align="right" sx={{ fontWeight: 700, color: c.total_outstanding > 0 ? 'error.main' : c.total_outstanding < 0 ? 'success.main' : 'text.secondary' }}>
                             {formatRupiah(c.total_outstanding)}
                           </TableCell>
                         </TableRow>
@@ -506,12 +566,14 @@ export const AdminPage: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              {paginationBar(3)}
             </Paper>
           )}
 
           {/* TAB 4: TRENDS */}
           {tab === 4 && (
             <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Rolling window: 30 hari, 12 minggu, atau 12 bulan. Tren menghitung transaksi titipan saja.</Typography>
               <ResponsiveTabs
                 value={trendSubTab}
                 onChange={(_, v) => setTrendSubTab(v)}
@@ -533,7 +595,7 @@ export const AdminPage: React.FC = () => {
                 return (
                   <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
                     <TableContainer>
-                      <Table>
+                      <Table sx={{ minWidth: 650 }}>
                         <TableHead sx={{ bgcolor: '#f1f5f9' }}>
                           <TableRow>
                             <TableCell sx={{ fontWeight: 700 }}>Periode (Label)</TableCell>
@@ -572,7 +634,7 @@ export const AdminPage: React.FC = () => {
           {tab === 5 && (
             <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
               <TableContainer>
-                <Table>
+                <Table sx={{ minWidth: 650 }}>
                   <TableHead sx={{ bgcolor: '#f1f5f9' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>Waktu</TableCell>
@@ -584,7 +646,11 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {auditLogs.map((log) => (
+                    {auditLogs.length === 0 ? <TableRow><TableCell colSpan={6} align="center">Tidak ada data audit log.</TableCell></TableRow> : auditLogs.map((log) => {
+                      const meta = typeof log.metadata === 'string' ? log.metadata : JSON.stringify(log.metadata);
+                      const isLong = meta.length > 100;
+                      const open = Boolean(expandedMeta[log.id]);
+                      return (
                       <TableRow key={log.id} hover>
                         <TableCell>
                           <Typography variant="caption">
@@ -601,22 +667,25 @@ export const AdminPage: React.FC = () => {
                         <TableCell sx={{ fontWeight: 600 }}>{log.actor_username || 'system'}</TableCell>
                         <TableCell><Chip label={log.action} size="small" variant="outlined" /></TableCell>
                         <TableCell>{log.target_type}</TableCell>
-                        <TableCell><code>{log.target_id ? `${log.target_id.substring(0, 8)}...` : '-'}</code></TableCell>
-                        <TableCell>
-                          <code>{typeof log.metadata === 'string' ? log.metadata : JSON.stringify(log.metadata)}</code>
+                        <TableCell><code style={{ whiteSpace: 'nowrap' }}>{log.target_id ? `${log.target_id.substring(0, 8)}...` : '-'}</code></TableCell>
+                        <TableCell sx={{ maxWidth: 280, overflowWrap: 'anywhere' }}>
+                          <code>{isLong && !open ? `${meta.slice(0, 100)}...` : meta}</code>
+                          {isLong && <Button size="small" onClick={() => setExpandedMeta((m) => ({ ...m, [log.id]: !open }))}>{open ? 'Tutup' : 'Lihat'}</Button>}
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </TableContainer>
+              {paginationBar(5)}
             </Paper>
           )}
         </>
       )}
 
       {/* Reset Password Dialog */}
-      <Dialog open={openReset} onClose={() => setOpenReset(false)} maxWidth="xs" fullWidth>
+      <Dialog open={openReset} onClose={() => { if (!isSubmitting) { setOpenReset(false); setNewPassword(''); setResetUsername(''); setResetError(null); } }} maxWidth="xs" fullWidth>
         <form onSubmit={handleResetPassword}>
           <DialogTitle sx={{ fontWeight: 700 }}>Reset Password Pengguna</DialogTitle>
           <DialogContent dividers>
@@ -631,11 +700,14 @@ export const AdminPage: React.FC = () => {
               autoFocus
               placeholder="Minimal 6 karakter"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(e) => { setNewPassword(e.target.value); setResetError(null); }}
+              error={Boolean(resetError)}
+              helperText="Minimal 6 karakter"
             />
+            {resetError && <Alert severity="error" sx={{ mt: 1 }}>{resetError}</Alert>}
           </DialogContent>
           <DialogActions sx={{ p: 2 }}>
-            <Button onClick={() => setOpenReset(false)} color="inherit" disabled={isSubmitting}>
+            <Button onClick={() => { if (!isSubmitting) { setOpenReset(false); setNewPassword(''); setResetUsername(''); setResetError(null); } }} color="inherit" disabled={isSubmitting}>
               Batal
             </Button>
             <Button type="submit" variant="contained" color="warning" disabled={isSubmitting}>

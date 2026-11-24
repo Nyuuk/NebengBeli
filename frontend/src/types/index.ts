@@ -4,6 +4,7 @@ export interface User {
   id: string;
   username: string;
   role: UserRole;
+  token_version?: number;
   created_at: string;
   needs_username_update?: boolean;
 }

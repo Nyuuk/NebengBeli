@@ -267,7 +267,7 @@ func (r *sqlWalletRepository) ListAll(ctx context.Context, limit, offset int) ([
 		LEFT JOIN users ou ON w.owner_id = ou.id
 		LEFT JOIN entries e ON e.wallet_id = w.id
 		GROUP BY w.id, cu.username, ou.username
-		ORDER BY w.created_at DESC
+		ORDER BY w.created_at DESC, w.id DESC
 		LIMIT $1 OFFSET $2;
 	`
 	rows, err := r.db.QueryContext(ctx, query, limit, offset)

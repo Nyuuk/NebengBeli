@@ -102,7 +102,7 @@ export async function adminListEntriesApi(params: AdminEntriesFilter = {}): Prom
   const searchParams = new URLSearchParams();
   if (params.limit !== undefined) searchParams.set('limit', params.limit.toString());
   if (params.offset !== undefined) searchParams.set('offset', params.offset.toString());
-  if (params.page !== undefined) searchParams.set('page', params.page.toString());
+  if (params.page !== undefined && params.limit === undefined && params.offset === undefined) searchParams.set('page', params.page.toString());
   if (params.type) searchParams.set('type', params.type);
   if (params.wallet_id) searchParams.set('wallet_id', params.wallet_id);
   if (params.creator_id) searchParams.set('creator_id', params.creator_id);

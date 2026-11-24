@@ -93,7 +93,7 @@ func (r *sqlAuditRepository) List(ctx context.Context, filter AuditLogFilter) ([
 		FROM audit_logs a
 		LEFT JOIN users u ON a.actor_id = u.id
 		%s
-		ORDER BY a.created_at DESC
+		ORDER BY a.created_at DESC, a.id DESC
 		LIMIT $%d OFFSET $%d;
 	`, baseWhere, argIdx, argIdx+1)
 

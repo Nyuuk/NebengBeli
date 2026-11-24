@@ -13,6 +13,8 @@ import (
 	"github.com/nyuuk/nebengbeli/internal/service"
 )
 
+const maxPaginationOffset = 1_000_000_000
+
 type AdminHandler struct {
 	userRepo   repository.UserRepository
 	walletRepo repository.WalletRepository
@@ -42,9 +44,26 @@ type AdminResetPasswordRequest struct {
 	NewPassword    string `json:"new_password" binding:"required,min=6"`
 }
 
+func parsePagination(c *gin.Context, defaultLimit, maxLimit int) (limit, offset int) {
+	limit, err := strconv.Atoi(c.Query("limit"))
+	if err != nil || limit <= 0 {
+		limit = defaultLimit
+	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+	offset, err = strconv.Atoi(c.Query("offset"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+	if offset > maxPaginationOffset {
+		offset = maxPaginationOffset
+	}
+	return limit, offset
+}
+
 func (h *AdminHandler) ListUsers(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset := parsePagination(c, 50, 200)
 
 	users, total, err := h.userRepo.List(c.Request.Context(), limit, offset)
 	if err != nil {
@@ -84,8 +103,7 @@ func (h *AdminHandler) ResetPassword(c *gin.Context) {
 }
 
 func (h *AdminHandler) ListWallets(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset := parsePagination(c, 50, 200)
 
 	wallets, total, err := h.walletRepo.ListAll(c.Request.Context(), limit, offset)
 	if err != nil {
@@ -110,10 +128,7 @@ func (h *AdminHandler) ListEntries(c *gin.Context) {
 		return
 	}
 
-	page := 1
-	if filter.Limit > 0 && filter.Offset > 0 {
-		page = (filter.Offset / filter.Limit) + 1
-	}
+	page := filter.Offset/filter.Limit + 1
 
 	c.JSON(http.StatusOK, gin.H{
 		"entries": entries,
@@ -165,8 +180,7 @@ func (h *AdminHandler) GetPeriodSummary(c *gin.Context) {
 }
 
 func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset := parsePagination(c, 50, 200)
 	action := c.Query("action")
 	targetType := c.Query("target_type")
 	if targetType == "" {
@@ -243,9 +257,8 @@ func (h *AdminHandler) GetStats(c *gin.Context) {
 }
 
 func (h *AdminHandler) parseAdminFilter(c *gin.Context) repository.AdminEntryFilter {
-	limitStr := c.DefaultQuery("limit", "50")
 	pageStr := c.DefaultQuery("page", "1")
-	offsetStr := c.Query("offset")
+	offsetStr, hasOffset := c.GetQuery("offset")
 	typeStr := c.Query("type")
 	walletIDStr := c.Query("wallet_id")
 	creatorIDStr := c.Query("creator_id")
@@ -259,20 +272,33 @@ func (h *AdminHandler) parseAdminFilter(c *gin.Context) repository.AdminEntryFil
 	startStr := c.Query("start_date")
 	endStr := c.Query("end_date")
 
-	limit, err := strconv.Atoi(limitStr)
+	limit, err := strconv.Atoi(c.Query("limit"))
 	if err != nil || limit <= 0 {
 		limit = 50
 	}
+	if limit > 200 {
+		limit = 200
+	}
 
-	var offset int
-	if offsetStr != "" {
-		offset, _ = strconv.Atoi(offsetStr)
+	offset := 0
+	if hasOffset {
+		parsedOffset, parseErr := strconv.Atoi(offsetStr)
+		if parseErr == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
 	} else {
-		page, _ := strconv.Atoi(pageStr)
-		if page <= 0 {
+		page, pageErr := strconv.Atoi(pageStr)
+		if pageErr != nil || page <= 0 {
 			page = 1
 		}
-		offset = (page - 1) * limit
+		if page-1 > maxPaginationOffset/limit {
+			offset = maxPaginationOffset
+		} else {
+			offset = (page - 1) * limit
+		}
+	}
+	if offset > maxPaginationOffset {
+		offset = maxPaginationOffset
 	}
 
 	var entryType *model.EntryType

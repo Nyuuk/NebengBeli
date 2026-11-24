@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { CorrectionModal } from '../components/CorrectionModal';
 import { AdminPage } from '../pages/AdminPage';
@@ -423,6 +423,104 @@ describe('Typed Admin API Adapters & Malformed Response Rejection', () => {
   });
 });
 
+describe('AdminPage pagination and request races', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  const renderAdminPage = () => render(<BrowserRouter><AuthProvider><OnlineStatusProvider><AdminPage /></OnlineStatusProvider></AuthProvider></BrowserRouter>);
+  const emptyEntries = (total = 0, name?: string) => ({
+    entries: name ? [{ id: name, client_id: name, wallet_id: 'w', type: 'titipan' as const, amount: 1, item_name: name, note: '', occurred_at: new Date().toISOString(), created_by: 'u', created_at: new Date().toISOString() }] : [],
+    total, page: 1, limit: 50,
+  });
+  const summary = (amount: number) => ({ total_count: 1, summary: { total_titipan_count: 1, total_titipan_amount: amount, total_topup_count: 0, total_topup_amount: 0, total_koreksi_count: 0, total_koreksi_amount: 0, total_count: 1, total_volume: amount, net_balance: amount } });
+
+  it('does not let late summary fallback overwrite newer summary', async () => {
+    let resolveOld!: (value: Awaited<ReturnType<typeof adminApi.adminGetSummaryApi>>) => void;
+    const oldSummary = new Promise<Awaited<ReturnType<typeof adminApi.adminGetSummaryApi>>>((resolve) => { resolveOld = resolve; });
+    vi.spyOn(adminApi, 'adminGetStatsApi').mockResolvedValue({ stats: { total_users: 0, total_wallets: 0, active_wallets: 0, archived_wallets: 0, total_entries: 0, total_volume: 0, total_audit_logs: 0 } });
+    vi.spyOn(adminApi, 'adminListUsersApi').mockResolvedValue({ users: [], total: 0 });
+    const entrySpy = vi.spyOn(adminApi, 'adminListEntriesApi').mockResolvedValue(emptyEntries(100) as Awaited<ReturnType<typeof adminApi.adminListEntriesApi>>);
+    const summarySpy = vi.spyOn(adminApi, 'adminGetSummaryApi').mockReturnValueOnce(oldSummary).mockResolvedValueOnce(summary(200) as Awaited<ReturnType<typeof adminApi.adminGetSummaryApi>>);
+    renderAdminPage();
+    fireEvent.click(screen.getByRole('tab', { name: /Semua Transaksi/i }));
+    await waitFor(() => expect(entrySpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(summarySpy).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: /Tren Sistem/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Semua Transaksi/i }));
+    await waitFor(() => expect(entrySpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(summarySpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(summarySpy).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText(/200/).length).toBeGreaterThan(0);
+    await act(async () => {
+      resolveOld(summary(100) as Awaited<ReturnType<typeof adminApi.adminGetSummaryApi>>);
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText(/200/).length).toBeGreaterThan(0);
+    expect(entrySpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores stale 404 fallback and resets nonzero total to empty range', async () => {
+    vi.spyOn(adminApi, 'adminGetStatsApi').mockResolvedValue({ stats: { total_users: 0, total_wallets: 0, active_wallets: 0, archived_wallets: 0, total_entries: 0, total_volume: 0, total_audit_logs: 0 } });
+    vi.spyOn(adminApi, 'adminListUsersApi').mockResolvedValue({ users: [], total: 0 });
+    let rejectOld!: (reason: unknown) => void;
+    const stale = new Promise<never>((_, reject) => { rejectOld = reject; });
+    const entrySpy = vi.spyOn(adminApi, 'adminListEntriesApi').mockReturnValueOnce(stale).mockResolvedValueOnce(emptyEntries(100, 'fresh') as Awaited<ReturnType<typeof adminApi.adminListEntriesApi>>).mockRejectedValue({ status: 404 });
+    renderAdminPage();
+    fireEvent.click(screen.getByRole('tab', { name: /Semua Transaksi/i }));
+    await waitFor(() => expect(entrySpy).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: /Tren Sistem/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Semua Transaksi/i }));
+    await waitFor(() => expect(entrySpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('fresh')).toBeDefined());
+    await act(async () => {
+      rejectOld({ status: 404 });
+      await Promise.resolve();
+    });
+    expect(screen.getByText('fresh')).toBeDefined();
+    expect(entrySpy).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(entrySpy).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(screen.getByText('Menampilkan 0–0 dari 0')).toBeDefined());
+    expect(screen.getByRole('button', { name: 'page 1' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled();
+  });
+
+  it('page-size change resets page and fetches once at offset zero', async () => {
+    vi.spyOn(adminApi, 'adminGetStatsApi').mockResolvedValue({ stats: { total_users: 0, total_wallets: 0, active_wallets: 0, archived_wallets: 0, total_entries: 0, total_volume: 0, total_audit_logs: 0 } });
+    const users = vi.spyOn(adminApi, 'adminListUsersApi').mockImplementation(async () => ({ users: [], total: 100 }));
+    renderAdminPage();
+    await waitFor(() => expect(users).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(users).toHaveBeenCalledTimes(2));
+    fireEvent.change(screen.getByLabelText('Baris per halaman'), { target: { value: '25' } });
+    await waitFor(() => expect(users).toHaveBeenCalledTimes(3));
+    expect(users).toHaveBeenLastCalledWith(25, 0);
+  });
+
+  it('clamps page and refetches when total shrinks', async () => {
+    vi.spyOn(adminApi, 'adminGetStatsApi').mockResolvedValue({ stats: { total_users: 0, total_wallets: 0, active_wallets: 0, archived_wallets: 0, total_entries: 0, total_volume: 0, total_audit_logs: 0 } });
+    const users = vi.spyOn(adminApi, 'adminListUsersApi')
+      .mockResolvedValueOnce({ users: [], total: 100 })
+      .mockResolvedValueOnce({ users: [], total: 10 })
+      .mockResolvedValueOnce({ users: [], total: 10 });
+    renderAdminPage();
+    await waitFor(() => expect(users).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(users).toHaveBeenCalledTimes(3));
+    expect(users).toHaveBeenLastCalledWith(50, 0);
+    expect(screen.getByText('Menampilkan 1–10 dari 10')).toBeDefined();
+  });
+
+  it('does not show stale rows when next page request errors', async () => {
+    vi.spyOn(adminApi, 'adminGetStatsApi').mockResolvedValue({ stats: { total_users: 0, total_wallets: 0, active_wallets: 0, archived_wallets: 0, total_entries: 0, total_volume: 0, total_audit_logs: 0 } });
+    vi.spyOn(adminApi, 'adminListUsersApi').mockImplementationOnce(async () => ({ users: [{ id: 'u', username: 'old-row', role: 'user', created_at: '' }], total: 100 })).mockRejectedValueOnce(new Error('page failed'));
+    renderAdminPage();
+    await waitFor(() => expect(screen.getByText('old-row')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Coba Lagi' })).toBeDefined());
+    expect(screen.queryByText('old-row')).toBeNull();
+  });
+});
+
 describe('AdminPage Live Data Presentation', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -590,5 +688,87 @@ describe('AdminPage Live Data Presentation', () => {
     await waitFor(() => {
       expect(screen.getByText('2026-09-30')).toBeDefined();
     });
+  });
+
+  it('paginates Users, Wallets, Entries, Audit Logs, slices Creators locally, keeps independent tab state, handles retry and reset modal validation', async () => {
+    vi.spyOn(adminApi, 'adminGetStatsApi').mockResolvedValue({
+      stats: { total_users: 60, total_wallets: 60, active_wallets: 60, archived_wallets: 0, total_entries: 60, total_volume: 100000, total_audit_logs: 60 },
+    });
+    const usersSpy = vi.spyOn(adminApi, 'adminListUsersApi').mockImplementation(async (_limit = 50, offset = 0) => ({
+      users: [{ id: `u-${offset}`, username: `user_${offset}`, role: 'user', token_version: 2, created_at: new Date().toISOString() }],
+      total: 60,
+    }));
+    const walletsSpy = vi.spyOn(adminApi, 'adminListWalletsApi').mockImplementation(async (_limit = 50, offset = 0) => ({
+      wallets: [{ id: `w-${offset}`, name: `wallet_${offset}`, creator_id: 'u-1', creator_username: 'c', balance: 1000, entry_count: 1, is_archived: false, created_at: new Date().toISOString() }],
+      total: 60,
+    }));
+    const entriesSpy = vi.spyOn(adminApi, 'adminListEntriesApi').mockImplementation(async ({ limit = 50, offset = 0 } = {}) => ({
+      entries: [{ id: `e-${offset}`, client_id: 'c', wallet_id: 'w-1', type: 'titipan', amount: 1000, item_name: `item_${offset}`, note: '', occurred_at: new Date().toISOString(), created_by: 'u-1', created_at: new Date().toISOString() }],
+      total: 60, page: 1, limit,
+    }));
+    vi.spyOn(adminApi, 'adminGetSummaryApi').mockRejectedValue(new Error('summary down'));
+    const creatorsSpy = vi.spyOn(adminApi, 'adminListCreatorsApi').mockResolvedValue({
+      creators: Array.from({ length: 55 }, (_, i) => ({
+        creator_id: `c-${i}`, username: `creator_${i}`, total_wallets: 1, active_wallets: 1, archived_wallets: 0,
+        total_titipan_count: 1, total_titipan_amount: 1000, total_topup_count: 0, total_topup_amount: 0, total_koreksi_count: 0, total_koreksi_amount: 0, total_outstanding: 1000,
+      })),
+      total: 55,
+    });
+    const auditsSpy = vi.spyOn(adminApi, 'adminListAuditLogsApi').mockImplementation(async ({ limit: _limit = 50, offset = 0 } = {}) => ({
+      audit_logs: [{ id: `a-${offset}`, action: `act_${offset}`, target_type: 'user', metadata: { k: 'v' }, created_at: new Date().toISOString() }],
+      total: 60,
+    }));
+
+    render(<BrowserRouter><AuthProvider><OnlineStatusProvider><AdminPage /></OnlineStatusProvider></AuthProvider></BrowserRouter>);
+    await waitFor(() => expect(screen.getByText('user_0')).toBeDefined());
+    expect(screen.getByText('Menampilkan 1–50 dari 60')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(usersSpy).toHaveBeenLastCalledWith(50, 50));
+    expect(screen.getByText('Menampilkan 51–60 dari 60')).toBeDefined();
+
+    // Reset password modal validation & reset on close
+    fireEvent.click(screen.getByRole('button', { name: /Reset Password/i }));
+    fireEvent.change(screen.getByLabelText(/Password Baru/i), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: /Reset & Cabut Sesi/i }));
+    expect(screen.getByRole('alert').textContent).toMatch(/Minimal 6 karakter/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Batal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: /Reset Password/i }));
+    expect((screen.getByLabelText(/Password Baru/i) as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Batal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // Wallets tab page 2
+    fireEvent.click(screen.getByRole('tab', { name: /Semua Buku/i }));
+    await waitFor(() => expect(screen.getByText('wallet_0')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(walletsSpy).toHaveBeenLastCalledWith(50, 50));
+
+    // Entries tab page 2 (summary failure does not break table)
+    fireEvent.click(screen.getByRole('tab', { name: /Semua Transaksi/i }));
+    await waitFor(() => expect(screen.getByText('item_0')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(entriesSpy).toHaveBeenLastCalledWith({ limit: 50, offset: 50 }));
+
+    // Creators tab local slicing without refetch
+    fireEvent.click(screen.getByRole('tab', { name: /Rekap Pembuat/i }));
+    await waitFor(() => expect(screen.getByText('creator_0')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    expect(screen.getByText('creator_50')).toBeDefined();
+    expect(creatorsSpy).toHaveBeenCalledTimes(1);
+
+    // Audit logs tab error + retry + page 2
+    auditsSpy.mockRejectedValueOnce(new Error('audit fail'));
+    fireEvent.click(screen.getByRole('tab', { name: /Audit Logs/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Coba Lagi' })).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Coba Lagi' }));
+    await waitFor(() => expect(screen.getByText('act_0')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    await waitFor(() => expect(auditsSpy).toHaveBeenLastCalledWith({ limit: 50, offset: 50 }));
+
+    // Independent tab state: back to Users still on page 2
+    fireEvent.click(screen.getByRole('tab', { name: /Pengguna/i }));
+    await waitFor(() => expect(screen.getByText('Menampilkan 51–60 dari 60')).toBeDefined());
   });
 });
