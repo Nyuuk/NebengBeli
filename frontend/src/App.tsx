@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { createTheme, ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
+import { ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
+import { appTheme } from './theme';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { OnlineStatusProvider } from './context/OnlineStatusContext';
 
@@ -14,32 +15,6 @@ import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OfflineEntryReviewPage } from './pages/OfflineEntryReviewPage';
 import { ClaimUsernameModal } from './components/ClaimUsernameModal';
-
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-      light: '#42a5f5',
-      dark: '#1565c0',
-    },
-    secondary: {
-      main: '#9c27b0',
-    },
-    background: {
-      default: '#f8fafc',
-      paper: '#ffffff',
-    },
-  },
-  typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-    button: {
-      textTransform: 'none',
-    },
-  },
-  shape: {
-    borderRadius: 8,
-  },
-});
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
@@ -79,7 +54,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 export const App: React.FC = () => {
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeProvider theme={appTheme}>
       <CssBaseline />
       <AuthProvider>
         <OnlineStatusProvider>

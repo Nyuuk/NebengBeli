@@ -67,7 +67,7 @@ export const UnlinkWalletModal: React.FC<UnlinkWalletModalProps> = ({
           </Alert>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ p: 2 }}>
+      <DialogActions>
         <Button onClick={onClose} color="inherit" disabled={isSubmitting}>
           Batal
         </Button>

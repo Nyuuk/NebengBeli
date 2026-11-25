@@ -113,7 +113,7 @@ export const LinkWalletModal: React.FC<LinkWalletModalProps> = ({
           </Box>
         )}
       </DialogContent>
-      <DialogActions sx={{ p: 2 }}>
+      <DialogActions>
         <Button onClick={handleClose} variant="outlined">
           Tutup
         </Button>

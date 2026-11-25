@@ -267,7 +267,7 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
           variant="outlined"
           sx={{
             p: 2,
-            bgcolor: '#f8fafc',
+            bgcolor: 'background.default',
             fontFamily: 'monospace',
             fontSize: '0.85rem',
             whiteSpace: 'pre-wrap',
@@ -280,7 +280,6 @@ export const RekapTextModal: React.FC<RekapTextModalProps> = ({
         </Paper>
       </DialogContent>
       <DialogActions sx={{
-        p: 2,
         justifyContent: 'space-between',
         flexDirection: { xs: 'column', sm: 'row' },
         alignItems: { xs: 'stretch', sm: 'center' },

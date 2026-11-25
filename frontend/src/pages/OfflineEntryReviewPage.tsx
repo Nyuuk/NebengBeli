@@ -96,7 +96,7 @@ export const OfflineEntryReviewPage: React.FC = () => {
   );
 
   const entryCard = (entry: PendingOfflineEntry, mode: 'unassigned' | 'assigned') => (
-    <Card key={entry.client_id} variant="outlined">
+    <Card key={entry.client_id} variant="outlined" sx={{ borderRadius: 1.5 }}>
       <CardContent sx={{ p: { xs: 2, sm: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.5 } } }}>
         {renderDetails(entry)}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
@@ -115,7 +115,7 @@ export const OfflineEntryReviewPage: React.FC = () => {
 
   return <Layout>
     <Box sx={{ maxWidth: 760, mx: 'auto' }}>
-      <Typography variant="h5" component="h1" fontWeight={700} gutterBottom>Review entri offline</Typography>
+      <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' } }} gutterBottom>Review entri offline</Typography>
       <Typography color="text.secondary" sx={{ mb: 2 }}>Entri tanpa pemilik tidak akan disinkronkan sampai Anda menetapkannya secara eksplisit.</Typography>
       {error && <Alert severity="error" action={<Button color="inherit" onClick={() => void refresh()}>Coba lagi</Button>} sx={{ mb: 2 }}>{error}</Alert>}
       {loading ? <Box role="status" aria-label="Memuat entri offline" sx={{ display: 'flex', justifyContent: 'center', py: 5 }}><CircularProgress /></Box> : <>
@@ -134,7 +134,7 @@ export const OfflineEntryReviewPage: React.FC = () => {
     <Dialog open={Boolean(discardTarget)} onClose={() => setDiscardTarget(null)} aria-labelledby="discard-title">
       <DialogTitle id="discard-title">Buang entri offline?</DialogTitle>
       <DialogContent>Entri ini akan dihapus permanen dari perangkat ini. Tidak ada perubahan atau permintaan yang dikirim ke server. Tindakan ini tidak dapat dibatalkan.</DialogContent>
-      <DialogActions sx={{ flexWrap: 'wrap', p: 2 }}>
+      <DialogActions sx={{ flexWrap: 'wrap' }}>
         <Button onClick={() => setDiscardTarget(null)} sx={{ minHeight: 48 }}>Batal</Button>
         <Button color="error" variant="contained" onClick={() => void discard()} disabled={Boolean(busyId)} sx={{ minHeight: 48 }}>Hapus permanen</Button>
       </DialogActions>

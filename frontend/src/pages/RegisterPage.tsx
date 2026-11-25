@@ -66,7 +66,7 @@ export const RegisterPage: React.FC = () => {
     <Container maxWidth="xs" sx={{ mt: 6 }}>
       <Box sx={{ textAlign: 'center', mb: 4 }}>
         <AccountBalanceWalletIcon sx={{ fontSize: 52, color: 'primary.main', mb: 1 }} />
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
           NebengBeli
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -74,9 +74,9 @@ export const RegisterPage: React.FC = () => {
         </Typography>
       </Box>
 
-      <Card elevation={3} sx={{ borderRadius: 3, p: 1 }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
+      <Card elevation={3} sx={{ borderRadius: 2 }}>
+        <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
+          <Typography variant="h6" component="h2" sx={{ fontWeight: 700, mb: 2 }}>
             Buat Akun Baru
           </Typography>
 

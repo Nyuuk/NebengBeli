@@ -1,4 +1,5 @@
 import React from 'react';
+import { alpha } from '@mui/material/styles';
 import {
   AppBar,
   Toolbar,
@@ -39,7 +40,7 @@ export const Navbar: React.FC = () => {
   };
 
   return (
-    <AppBar position="sticky" elevation={1} sx={{ backgroundColor: '#1976d2' }}>
+    <AppBar position="sticky" elevation={1} sx={{ backgroundColor: 'primary.main' }}>
       <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
         <Box
           sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
@@ -83,15 +84,15 @@ export const Navbar: React.FC = () => {
             )}
 
             <Chip
-              avatar={<Avatar sx={{ bgcolor: '#0d47a1', color: '#fff' }}>{user.username[0]?.toUpperCase()}</Avatar>}
+              avatar={<Avatar sx={{ bgcolor: 'primary.dark', color: 'primary.contrastText' }}>{user.username[0]?.toUpperCase()}</Avatar>}
               label={user.username}
               onClick={handleMenuOpen}
               color="primary"
               variant="outlined"
               sx={{
-                bgcolor: 'rgba(255, 255, 255, 0.15)',
-                color: '#fff',
-                borderColor: 'rgba(255, 255, 255, 0.3)',
+                bgcolor: (theme) => alpha(theme.palette.common.white, 0.15),
+                color: 'common.white',
+                borderColor: (theme) => alpha(theme.palette.common.white, 0.3),
                 cursor: 'pointer',
                 fontWeight: 500,
               }}
@@ -142,7 +143,7 @@ export const Navbar: React.FC = () => {
               variant="contained"
               color="secondary"
               onClick={() => navigate('/register')}
-              sx={{ bgcolor: '#ffffff', color: '#1976d2', '&:hover': { bgcolor: '#f0f0f0' } }}
+              sx={{ bgcolor: 'common.white', color: 'primary.main', '&:hover': { bgcolor: 'grey.100' } }}
             >
               Daftar
             </Button>

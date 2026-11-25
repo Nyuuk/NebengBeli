@@ -1,4 +1,5 @@
 import React from 'react';
+import { alpha } from '@mui/material/styles';
 import { Card, CardContent, Typography, Grid, Box, Chip } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -36,16 +37,16 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
   return (
     <Card
       elevation={2}
-      sx={{
-        borderRadius: 3,
-        background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
-        color: '#ffffff',
+      sx={(theme) => ({
+        borderRadius: 2,
+        background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
+        color: theme.palette.common.white,
         mb: 3,
         position: 'relative',
         overflow: 'hidden',
-      }}
+      })}
     >
-      <CardContent sx={{ p: { xs: 2.5, sm: 3.5 } }}>
+      <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
         <Box
           sx={{
             display: 'flex',
@@ -57,7 +58,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
           }}
         >
           <Box>
-            <Typography variant="overline" sx={{ letterSpacing: 1.2, color: 'rgba(255,255,255,0.8)' }}>
+            <Typography variant="overline" sx={{ letterSpacing: 1.2, color: (theme) => alpha(theme.palette.common.white, 0.8) }}>
               {walletName ? `Buku: ${walletName}` : 'Ringkasan Ledger'}
             </Typography>
             <Typography
@@ -72,15 +73,15 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
               <Chip
                 label="Diarsipkan"
                 size="small"
-                sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff' }}
+                sx={(theme) => ({ bgcolor: alpha(theme.palette.common.white, 0.2), color: 'common.white' })}
               />
             )}
             <Chip
               label={balanceStatusText}
               size="small"
               sx={{
-                bgcolor: balance === 0 ? '#4caf50' : balance < 0 ? '#ff5252' : '#40c4ff',
-                color: '#fff',
+                bgcolor: balance === 0 ? 'success.dark' : balance < 0 ? 'error.dark' : 'info.dark',
+                color: 'common.white',
                 fontWeight: 600,
                 height: 'auto',
                 '& .MuiChip-label': { whiteSpace: 'normal', display: 'block', py: 0.5 },
@@ -93,7 +94,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
           <Grid container spacing={2}>
             <Grid item xs={4}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <TrendingUpIcon sx={{ color: '#ff8a80', fontSize: { xs: 16, sm: 20 } }} />
+                <TrendingUpIcon sx={{ color: 'common.white', fontSize: { xs: 16, sm: 20 } }} />
                 <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
                   Total Titipan
                 </Typography>
@@ -105,7 +106,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
 
             <Grid item xs={4}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <TrendingDownIcon sx={{ color: '#b9f6ca', fontSize: { xs: 16, sm: 20 } }} />
+                <TrendingDownIcon sx={{ color: 'common.white', fontSize: { xs: 16, sm: 20 } }} />
                 <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
                   Total Bayar (Topup)
                 </Typography>
@@ -117,7 +118,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({ summary, walletName, i
 
             <Grid item xs={4}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <AccountBalanceWalletIcon sx={{ color: '#ffe57f', fontSize: { xs: 16, sm: 20 } }} />
+                <AccountBalanceWalletIcon sx={{ color: 'common.white', fontSize: { xs: 16, sm: 20 } }} />
                 <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
                   Entri
                 </Typography>

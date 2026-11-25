@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { alpha } from '@mui/material/styles';
 import {
   Typography,
   Grid,
@@ -327,7 +328,7 @@ export const DashboardPage: React.FC = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: -0.5 }}>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' }, letterSpacing: -0.5 }}>
             Buku Ledger Titipan
           </Typography>
           <Typography variant="body2" color="text.secondary">
@@ -381,7 +382,9 @@ export const DashboardPage: React.FC = () => {
             p: 2,
             mb: 3,
             borderRadius: 2,
-            bgcolor: '#e3f2fd',
+            bgcolor: (theme) => alpha(theme.palette.info.main, 0.08),
+            border: '1px solid',
+            borderColor: (theme) => alpha(theme.palette.info.main, 0.25),
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -425,7 +428,7 @@ export const DashboardPage: React.FC = () => {
               <CircularProgress />
             </Box>
           ) : creatorWallets.length === 0 ? (
-            <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}>
+            <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <AccountBalanceWalletIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Belum Ada Buku Titipan yang Anda Kelola
@@ -442,16 +445,18 @@ export const DashboardPage: React.FC = () => {
               {creatorWallets.map((w) => (
                 <Grid item xs={12} sm={6} md={4} key={w.id}>
                   <Card
-                    elevation={1}
+                    elevation={0}
                     sx={{
-                      borderRadius: 2.5,
+                      borderRadius: 1.5,
+                      border: '1px solid', borderColor: 'divider',
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
                       transition: 'transform 0.15s ease-in-out, box-shadow 0.15s',
                       '&:hover': {
                         transform: 'translateY(-3px)',
-                        boxShadow: 4,
+                        borderColor: 'primary.main',
+                        boxShadow: 1,
                       },
                     }}
                   >
@@ -477,7 +482,7 @@ export const DashboardPage: React.FC = () => {
                         </Typography>
                       </Box>
 
-                      <Box sx={{ width: '100%', mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
+                      <Box sx={{ width: '100%', mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
                         <Typography variant="caption" color="text.secondary">
                           Status Saldo
                         </Typography>
@@ -485,7 +490,7 @@ export const DashboardPage: React.FC = () => {
                           variant="h5"
                           sx={{
                             fontWeight: 800,
-                            color: w.balance < 0 ? '#d32f2f' : w.balance > 0 ? '#0288d1' : '#2e7d32',
+                            color: w.balance < 0 ? 'error.main' : w.balance > 0 ? 'info.main' : 'success.main',
                           }}
                         >
                           {formatRupiah(w.balance)}
@@ -511,7 +516,7 @@ export const DashboardPage: React.FC = () => {
               <CircularProgress />
             </Box>
           ) : ownerWalletsByCreator.length === 0 ? (
-            <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}>
+            <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <AccountBalanceWalletIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Belum Ada Buku Titipan Milik Anda
@@ -529,7 +534,7 @@ export const DashboardPage: React.FC = () => {
                       p: 2,
                       mb: 2,
                       borderRadius: 2,
-                      bgcolor: '#f1f5f9',
+                      bgcolor: 'grey.100',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
@@ -551,7 +556,7 @@ export const DashboardPage: React.FC = () => {
                         variant="subtitle1"
                         sx={{
                           fontWeight: 800,
-                          color: group.subtotal < 0 ? '#d32f2f' : group.subtotal > 0 ? '#0288d1' : '#2e7d32',
+                          color: group.subtotal < 0 ? 'error.main' : group.subtotal > 0 ? 'info.main' : 'success.main',
                         }}
                       >
                         {formatRupiah(group.subtotal)}
@@ -563,16 +568,18 @@ export const DashboardPage: React.FC = () => {
                     {group.wallets.map((w) => (
                       <Grid item xs={12} sm={6} md={4} key={w.id}>
                         <Card
-                          elevation={1}
+                          elevation={0}
                           sx={{
-                            borderRadius: 2.5,
+                            borderRadius: 1.5,
+                            border: '1px solid', borderColor: 'divider',
                             height: '100%',
                             display: 'flex',
                             flexDirection: 'column',
                             transition: 'transform 0.15s ease-in-out, box-shadow 0.15s',
                             '&:hover': {
                               transform: 'translateY(-3px)',
-                              boxShadow: 4,
+                              borderColor: 'primary.main',
+                              boxShadow: 1,
                             },
                           }}
                         >
@@ -598,7 +605,7 @@ export const DashboardPage: React.FC = () => {
                               </Typography>
                             </Box>
 
-                            <Box sx={{ width: '100%', mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
+                            <Box sx={{ width: '100%', mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
                               <Typography variant="caption" color="text.secondary">
                                 Tagihan / Saldo Anda
                               </Typography>
@@ -606,7 +613,7 @@ export const DashboardPage: React.FC = () => {
                                 variant="h5"
                                 sx={{
                                   fontWeight: 800,
-                                  color: w.balance < 0 ? '#d32f2f' : w.balance > 0 ? '#0288d1' : '#2e7d32',
+                                  color: w.balance < 0 ? 'error.main' : w.balance > 0 ? 'info.main' : 'success.main',
                                 }}
                               >
                                 {formatRupiah(w.balance)}
@@ -635,7 +642,7 @@ export const DashboardPage: React.FC = () => {
               <CircularProgress />
             </Box>
           ) : archivedWallets.length === 0 ? (
-            <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}>
+            <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
               <ArchiveIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Tidak Ada Buku yang Diarsipkan
@@ -649,11 +656,11 @@ export const DashboardPage: React.FC = () => {
               {archivedWallets.map((w) => (
                 <Grid item xs={12} sm={6} md={4} key={w.id}>
                   <Card
-                    elevation={1}
+                    elevation={0}
                     sx={{
-                      borderRadius: 2.5,
-                      bgcolor: '#fafafa',
-                      border: '1px solid #eee',
+                      borderRadius: 1.5,
+                      bgcolor: 'background.default',
+                      border: '1px solid', borderColor: 'divider',
                     }}
                   >
                     <CardActionArea
@@ -715,7 +722,7 @@ export const DashboardPage: React.FC = () => {
               />
             </Box>
           </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
+          <DialogActions>
             <Button onClick={() => setOpenCreate(false)} color="inherit" disabled={isSubmitting}>
               Batal
             </Button>

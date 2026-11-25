@@ -233,7 +233,7 @@ export const AdminPage: React.FC = () => {
   return (
     <Layout>
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
           Admin & System Control Panel
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -256,8 +256,8 @@ export const AdminPage: React.FC = () => {
       {stats && (
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <CardContent sx={{ p: { xs: 2, sm: 2.5 }, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <PeopleIcon sx={{ fontSize: 40, color: 'primary.main' }} />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Total Pengguna</Typography>
@@ -268,9 +268,9 @@ export const AdminPage: React.FC = () => {
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <AccountBalanceWalletIcon sx={{ fontSize: 40, color: '#0288d1' }} />
+            <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <CardContent sx={{ p: { xs: 2, sm: 2.5 }, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <AccountBalanceWalletIcon sx={{ fontSize: 40, color: 'info.main' }} />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Buku Aktif / Total</Typography>
                   <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.active_wallets} / {stats.total_wallets}</Typography>
@@ -280,9 +280,9 @@ export const AdminPage: React.FC = () => {
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <ReceiptLongIcon sx={{ fontSize: 40, color: '#388e3c' }} />
+            <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <CardContent sx={{ p: { xs: 2, sm: 2.5 }, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <ReceiptLongIcon sx={{ fontSize: 40, color: 'success.main' }} />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Total Transaksi</Typography>
                   <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total_entries}</Typography>
@@ -292,9 +292,9 @@ export const AdminPage: React.FC = () => {
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
-            <Card elevation={1} sx={{ borderRadius: 2, height: '100%' }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <SecurityIcon sx={{ fontSize: 40, color: '#f57c00' }} />
+            <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <CardContent sx={{ p: { xs: 2, sm: 2.5 }, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <SecurityIcon sx={{ fontSize: 40, color: 'warning.main' }} />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Volume Perputaran</Typography>
                   <Typography variant="h5" sx={{ fontWeight: 800 }}>{formatRupiah(stats.total_volume)}</Typography>
@@ -327,10 +327,10 @@ export const AdminPage: React.FC = () => {
         <>
           {/* TAB 0: USERS */}
           {tab === 0 && (
-            <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+            <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
               <TableContainer>
                 <Table sx={{ minWidth: 650 }}>
-                  <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                  <TableHead sx={{ bgcolor: 'grey.100' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>Username</TableCell>
@@ -385,10 +385,10 @@ export const AdminPage: React.FC = () => {
 
           {/* TAB 1: WALLETS */}
           {tab === 1 && (
-            <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+            <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
               <TableContainer>
                 <Table sx={{ minWidth: 650 }}>
-                  <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                  <TableHead sx={{ bgcolor: 'grey.100' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>Nama Buku</TableCell>
@@ -428,7 +428,8 @@ export const AdminPage: React.FC = () => {
               {entriesSummary && (
                 <Grid container spacing={2} sx={{ mb: 2.5 }}>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 1.5, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider', height: '100%' }}>
+
                       <Typography variant="caption" color="text.secondary">Total Transaksi Titipan</Typography>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
                         {formatRupiah(Math.abs(entriesSummary.total_titipan_amount))} ({entriesSummary.total_titipan_count})
@@ -436,35 +437,38 @@ export const AdminPage: React.FC = () => {
                     </Paper>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 1.5, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider', height: '100%' }}>
+
                       <Typography variant="caption" color="text.secondary">Total Pembayaran Top-up</Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#0288d1' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'info.main' }}>
                         {formatRupiah(Math.abs(entriesSummary.total_topup_amount))} ({entriesSummary.total_topup_count})
                       </Typography>
                     </Paper>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 1.5, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider', height: '100%' }}>
+
                       <Typography variant="caption" color="text.secondary">Total Penyesuaian Koreksi</Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#f57c00' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'warning.main' }}>
                         {formatRupiah(entriesSummary.total_koreksi_amount)} ({entriesSummary.total_koreksi_count})
                       </Typography>
                     </Paper>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', height: '100%' }}>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 1.5, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider', height: '100%' }}>
+
                       <Typography variant="caption" color="text.secondary">Saldo Bersih / Total Volume</Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#388e3c' }}>{formatRupiah(entriesSummary.net_balance)}</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main' }}>{formatRupiah(entriesSummary.net_balance)}</Typography>
                       <Typography variant="body2" color="text.secondary">Volume: {formatRupiah(entriesSummary.total_volume)}</Typography>
                     </Paper>
                   </Grid>
                 </Grid>
               )}
 
-              <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
                 <TableContainer>
                   <Table sx={{ minWidth: 650 }}>
-                    <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                    <TableHead sx={{ bgcolor: 'grey.100' }}>
                       <TableRow>
                         <TableCell sx={{ fontWeight: 700 }}>ID</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Nama Item / Keterangan</TableCell>
@@ -525,10 +529,10 @@ export const AdminPage: React.FC = () => {
 
           {/* TAB 3: CREATORS */}
           {tab === 3 && (
-            <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+            <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
               <TableContainer>
                 <Table sx={{ minWidth: 650 }}>
-                  <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                  <TableHead sx={{ bgcolor: 'grey.100' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>Pembuat (Creator)</TableCell>
                       <TableCell align="center" sx={{ fontWeight: 700 }}>Total Buku</TableCell>
@@ -593,10 +597,10 @@ export const AdminPage: React.FC = () => {
                     : trends?.monthly || [];
 
                 return (
-                  <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                  <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
                     <TableContainer>
                       <Table sx={{ minWidth: 650 }}>
-                        <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                        <TableHead sx={{ bgcolor: 'grey.100' }}>
                           <TableRow>
                             <TableCell sx={{ fontWeight: 700 }}>Periode (Label)</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 700 }}>Jumlah Transaksi</TableCell>
@@ -632,10 +636,10 @@ export const AdminPage: React.FC = () => {
 
           {/* TAB 5: AUDIT LOGS */}
           {tab === 5 && (
-            <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+            <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
               <TableContainer>
                 <Table sx={{ minWidth: 650 }}>
-                  <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                  <TableHead sx={{ bgcolor: 'grey.100' }}>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>Waktu</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>Aktor</TableCell>
@@ -706,7 +710,7 @@ export const AdminPage: React.FC = () => {
             />
             {resetError && <Alert severity="error" sx={{ mt: 1 }}>{resetError}</Alert>}
           </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
+          <DialogActions>
             <Button onClick={() => { if (!isSubmitting) { setOpenReset(false); setNewPassword(''); setResetUsername(''); setResetError(null); } }} color="inherit" disabled={isSubmitting}>
               Batal
             </Button>

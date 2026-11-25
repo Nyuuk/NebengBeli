@@ -106,12 +106,13 @@ export const ChangePasswordPage: React.FC = () => {
           Kembali ke Beranda
         </Button>
 
-        <Card elevation={2} sx={{ borderRadius: 2 }}>
-          <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+        <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+
+          <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <LockResetIcon color="primary" sx={{ fontSize: 32, mr: 1.5 }} />
               <Box>
-                <Typography variant="h5" component="h1" sx={{ fontWeight: 700 }}>
+                <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
                   Ganti Kata Sandi
                 </Typography>
                 <Typography variant="body2" color="text.secondary">

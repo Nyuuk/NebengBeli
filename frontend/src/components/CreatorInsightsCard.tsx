@@ -11,6 +11,7 @@ import {
   LinearProgress,
 } from '@mui/material';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import { alpha } from '@mui/material/styles';
 import { formatRupiah } from './BalanceCard';
 import { CreatorInsights } from '../types';
 
@@ -40,12 +41,13 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
     .sort((a, b) => a.balance - b.balance);
 
   return (
-    <Card elevation={2} sx={{ borderRadius: 3, mb: 3, bgcolor: '#ffffff' }}>
-      <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+    <Card elevation={0} sx={{ borderRadius: 1.5, mb: 3, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
+
+      <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <AssessmentIcon color="primary" />
-            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+            <Typography variant="h6" component="h2" sx={{ fontWeight: 700, fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
               Insight Pembuat & Analisis Piutang
             </Typography>
           </Box>
@@ -64,15 +66,16 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
             <Box
               sx={{
                 p: 2,
-                borderRadius: 2,
-                bgcolor: '#fff4e5',
-                border: '1px solid #ffe0b2',
+                borderRadius: 1.5,
+                bgcolor: (theme) => alpha(theme.palette.warning.main, 0.08),
+                border: '1px solid',
+                borderColor: 'divider',
               }}
             >
-              <Typography variant="caption" sx={{ color: '#e65100', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: 'warning.dark', fontWeight: 600 }}>
                 Total Uang Saya yang Masih di Luar
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 800, color: '#bf360c', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: 'warning.dark', mt: 0.5 }}>
                 {formatRupiah(insights.total_money_outside)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -85,15 +88,16 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
             <Box
               sx={{
                 p: 2,
-                borderRadius: 2,
-                bgcolor: '#e8f5e9',
-                border: '1px solid #c8e6c9',
+                borderRadius: 1.5,
+                bgcolor: (theme) => alpha(theme.palette.success.main, 0.08),
+                border: '1px solid',
+                borderColor: 'divider',
               }}
             >
-              <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: 'success.dark', fontWeight: 600 }}>
                 Buku Aktif Dikelola
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 800, color: '#1b5e20', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark', mt: 0.5 }}>
                 {insights.active_wallets_count}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -106,15 +110,16 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
             <Box
               sx={{
                 p: 2,
-                borderRadius: 2,
-                bgcolor: '#e3f2fd',
-                border: '1px solid #bbdefb',
+                borderRadius: 1.5,
+                bgcolor: (theme) => alpha(theme.palette.info.main, 0.08),
+                border: '1px solid',
+                borderColor: 'divider',
               }}
             >
-              <Typography variant="caption" sx={{ color: '#1565c0', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: 'info.dark', fontWeight: 600 }}>
                 Total Belanja Ditalangi
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 800, color: '#0d47a1', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.dark', mt: 0.5 }}>
                 {formatRupiah(insights.total_titipan_volume)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -154,7 +159,7 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
             </Box>
 
             {trends.length === 0 ? (
-              <Box sx={{ py: 4, textAlign: 'center', bgcolor: '#f8fafc', borderRadius: 2 }}>
+              <Box sx={{ py: 4, textAlign: 'center', bgcolor: 'grey.50', borderRadius: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   Belum ada data tren belanja pada periode ini.
                 </Typography>
@@ -183,7 +188,7 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
                       <LinearProgress
                         variant="determinate"
                         value={percent}
-                        sx={{ height: 8, borderRadius: 4, bgcolor: '#e2e8f0' }}
+                        sx={{ height: 8, borderRadius: 4, bgcolor: 'grey.200' }}
                       />
                     </Box>
                   );
@@ -199,7 +204,7 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
             </Typography>
 
             {rankedWallets.length === 0 ? (
-              <Box sx={{ py: 4, textAlign: 'center', bgcolor: '#f8fafc', borderRadius: 2 }}>
+              <Box sx={{ py: 4, textAlign: 'center', bgcolor: 'grey.50', borderRadius: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   Tidak ada saldo piutang aktif saat ini.
                 </Typography>
@@ -213,12 +218,12 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
                     sx={{
                       p: 1.5,
                       borderRadius: 1.5,
-                      bgcolor: '#f8fafc',
+                      bgcolor: 'grey.50',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       cursor: onWalletClick ? 'pointer' : 'default',
-                      '&:hover': onWalletClick ? { bgcolor: '#edf2f7' } : {},
+                      '&:hover': onWalletClick ? { bgcolor: 'grey.100' } : {},
                     }}
                   >
                     <Box sx={{ overflow: 'hidden', mr: 1 }}>
@@ -236,7 +241,7 @@ export const CreatorInsightsCard: React.FC<CreatorInsightsCardProps> = ({
                       variant="body2"
                       sx={{
                         fontWeight: 800,
-                        color: w.balance < 0 ? '#d32f2f' : w.balance > 0 ? '#0288d1' : '#2e7d32',
+                        color: w.balance < 0 ? 'error.main' : w.balance > 0 ? 'info.main' : 'success.dark',
                         flexShrink: 0,
                       }}
                     >

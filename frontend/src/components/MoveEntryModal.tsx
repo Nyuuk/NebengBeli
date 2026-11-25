@@ -149,7 +149,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
             </Alert>
           )}
 
-          <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, mb: 2.5 }}>
+          <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 2, mb: 2.5 }}>
             <Typography variant="caption" color="text.secondary">
               Entri yang akan Dipindah:
             </Typography>
@@ -205,7 +205,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
             />
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions>
           <Button onClick={handleClose} color="inherit" disabled={isSubmitting}>
             Batal
           </Button>

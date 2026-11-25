@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { alpha } from '@mui/material/styles';
 import {
   Table,
   TableBody,
@@ -112,11 +113,11 @@ export const StatementView: React.FC<StatementViewProps> = ({
 
     switch (e.type) {
       case 'titipan':
-        return <Chip label="Titipan" size="small" sx={{ bgcolor: '#ffebee', color: '#c62828', fontWeight: 600 }} />;
+        return <Chip label="Titipan" size="small" sx={{ bgcolor: (theme) => alpha(theme.palette.error.main, 0.1), color: 'error.dark', fontWeight: 600 }} />;
       case 'topup':
-        return <Chip label="Top-up / Bayar" size="small" sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', fontWeight: 600 }} />;
+        return <Chip label="Top-up / Bayar" size="small" sx={{ bgcolor: (theme) => alpha(theme.palette.success.main, 0.1), color: 'success.dark', fontWeight: 600 }} />;
       case 'koreksi':
-        return <Chip label="Koreksi" size="small" sx={{ bgcolor: '#fff3e0', color: '#ef6c00', fontWeight: 600 }} />;
+        return <Chip label="Koreksi" size="small" sx={{ bgcolor: (theme) => alpha(theme.palette.warning.main, 0.15), color: 'warning.dark', fontWeight: 600 }} />;
       default:
         return <Chip label={e.type} size="small" />;
     }
@@ -196,7 +197,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
           </Typography>
           <Typography
             variant="body2"
-            sx={{ fontWeight: 700, color: (e.effective_amount || 0) < 0 ? '#d32f2f' : '#2e7d32' }}
+            sx={{ fontWeight: 700, color: (e.effective_amount || 0) < 0 ? 'error.main' : 'success.dark' }}
           >
             {(e.effective_amount || 0) > 0
               ? `+${formatRupiah(e.effective_amount || 0)}`
@@ -206,7 +207,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
       );
     }
     return (
-      <Typography variant="body2" sx={{ fontWeight: 700, color: e.amount < 0 ? '#d32f2f' : '#2e7d32' }}>
+      <Typography variant="body2" sx={{ fontWeight: 700, color: e.amount < 0 ? 'error.main' : 'success.dark' }}>
         {e.amount > 0 ? `+${formatRupiah(e.amount)}` : formatRupiah(e.amount)}
       </Typography>
     );
@@ -214,7 +215,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
 
   if (isMobile) {
     return (
-      <Paper elevation={1} sx={{ borderRadius: 2 }}>
+      <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
         {entriesWithEffective.length === 0 ? (
           <Box sx={{ py: 4, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
@@ -230,8 +231,8 @@ export const StatementView: React.FC<StatementViewProps> = ({
                 sx={{
                   p: 1.5,
                   mb: 1.5,
-                  borderRadius: 2,
-                  bgcolor: e.is_offline_failed ? '#fff5f5' : 'inherit',
+                  borderRadius: 1.5,
+                  bgcolor: e.is_offline_failed ? (theme) => alpha(theme.palette.error.main, 0.06) : 'inherit',
                   opacity: e.is_offline_pending ? 0.75 : 1,
                   '&:last-of-type': { mb: 0 },
                 }}
@@ -276,7 +277,8 @@ export const StatementView: React.FC<StatementViewProps> = ({
                     alignItems: 'center',
                     mt: 1,
                     pt: 1,
-                    borderTop: '1px solid #eee',
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
                   }}
                 >
                   <Box>
@@ -312,10 +314,10 @@ export const StatementView: React.FC<StatementViewProps> = ({
   }
 
   return (
-    <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+    <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
       <TableContainer>
         <Table sx={{ minWidth: 650 }}>
-          <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+          <TableHead sx={{ bgcolor: 'grey.100' }}>
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Waktu</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Tipe</TableCell>
@@ -343,7 +345,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                   key={e.id}
                   hover
                   sx={{
-                    bgcolor: e.is_offline_failed ? '#fff5f5' : 'inherit',
+                    bgcolor: e.is_offline_failed ? (theme) => alpha(theme.palette.error.main, 0.06) : 'inherit',
                     opacity: e.is_offline_pending ? 0.75 : 1,
                   }}
                 >

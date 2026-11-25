@@ -513,7 +513,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
                 <Paper
                   key={row.rowId}
                   variant="outlined"
-                  sx={{ p: 2, mb: 1.5, borderRadius: 2, position: 'relative' }}
+                  sx={{ p: 2, mb: 1.5, borderRadius: 1.5, position: 'relative' }}
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
@@ -651,7 +651,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
         ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, mb: 2 }}>
           <Table size="small">
-            <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+            <TableHead sx={{ bgcolor: 'grey.100' }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: 700, width: '28%' }}>Buku / Teman</TableCell>
                 <TableCell sx={{ fontWeight: 700, width: '32%' }}>Barang / Titipan</TableCell>
@@ -819,7 +819,6 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
       </DialogContent>
       <DialogActions
         sx={{
-          p: 2,
           flexDirection: { xs: 'column-reverse', sm: 'row' },
           alignItems: 'stretch',
           gap: { xs: 1, sm: 0 },

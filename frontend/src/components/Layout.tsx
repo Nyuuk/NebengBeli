@@ -9,9 +9,9 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#f8f9fa' }}>
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       <Navbar />
-      <Container maxWidth="lg" sx={{ mt: 3, mb: 4, flex: 1, px: { xs: 2, sm: 3 } }}>
+      <Container maxWidth="lg" sx={{ flex: 1, px: { xs: 2, sm: 3 }, py: { xs: 2.5, sm: 3 } }}>
         <OfflineBadge />
         {children}
       </Container>

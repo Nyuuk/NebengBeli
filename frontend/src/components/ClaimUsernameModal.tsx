@@ -145,7 +145,7 @@ export const ClaimUsernameModal: React.FC = () => {
           />
         </DialogContent>
 
-        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+        <DialogActions sx={{ justifyContent: 'space-between' }}>
           <Button
             type="button"
             color="inherit"

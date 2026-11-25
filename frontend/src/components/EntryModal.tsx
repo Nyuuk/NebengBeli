@@ -255,7 +255,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
             />
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions>
           <Button onClick={handleClose} color="inherit" disabled={isSubmitting}>
             Batal
           </Button>

@@ -482,7 +482,7 @@ export const WalletDetailPage: React.FC = () => {
           </IconButton>
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+              <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' }, lineHeight: 1.2 }}>
                 {wallet.name}
               </Typography>
               {wallet.is_archived && (
@@ -607,7 +607,7 @@ export const WalletDetailPage: React.FC = () => {
 
       {/* Statement Table Section */}
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h6" sx={{ fontWeight: 700 }}>
+        <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
           Daftar Rekam Transaksi (Statement)
         </Typography>
 
@@ -701,7 +701,7 @@ export const WalletDetailPage: React.FC = () => {
               sx={{ mt: 1 }}
             />
           </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
+          <DialogActions>
             <Button onClick={() => setOpenRenameModal(false)} color="inherit">
               Batal
             </Button>
@@ -743,7 +743,7 @@ export const WalletDetailPage: React.FC = () => {
             </Select>
           </FormControl>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions>
           <Button onClick={() => setOpenMoveFailedModal(false)} color="inherit">
             Batal
           </Button>

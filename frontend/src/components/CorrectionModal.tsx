@@ -252,7 +252,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
           )}
 
           {/* Original Entry Card */}
-          <Paper variant="outlined" sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2, mb: 2.5 }}>
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2, mb: 2.5 }}>
             <Typography variant="caption" color="text.secondary">
               Entri Asli:
             </Typography>
@@ -342,7 +342,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
             </Alert>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions>
           <Button onClick={handleClose} color="inherit" disabled={isSubmitting}>
             Batal
           </Button>

@@ -87,7 +87,7 @@ export const LinkRequestsPage: React.FC = () => {
   return (
     <Layout>
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
           Kelola Permintaan Tautan Wallet
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -112,10 +112,10 @@ export const LinkRequestsPage: React.FC = () => {
           <CircularProgress />
         </Box>
       ) : (
-        <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+        <Paper elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
           <TableContainer>
             <Table>
-              <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+              <TableHead sx={{ bgcolor: 'grey.100' }}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 700 }}>Waktu Dibuat</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Nama Buku</TableCell>
