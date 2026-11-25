@@ -13,7 +13,6 @@ import {
   Box,
   IconButton,
   Tooltip,
-  Pagination,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
@@ -25,6 +24,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { Entry } from '../types';
 import { formatRupiah } from './BalanceCard';
+import { TablePaginationBar } from './TablePaginationBar';
 
 interface StatementViewProps {
   entries: Entry[];
@@ -32,6 +32,8 @@ interface StatementViewProps {
   page: number;
   pageSize: number;
   onPageChange: (newPage: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  loading?: boolean;
   onCorrectEntry: (entry: Entry) => void;
   onMoveEntry: (entry: Entry) => void;
   onDiscardFailedEntry?: (entry: Entry) => void;
@@ -46,6 +48,8 @@ export const StatementView: React.FC<StatementViewProps> = ({
   page,
   pageSize,
   onPageChange,
+  onPageSizeChange,
+  loading,
   onCorrectEntry,
   onMoveEntry,
   onDiscardFailedEntry,
@@ -56,7 +60,6 @@ export const StatementView: React.FC<StatementViewProps> = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const safeEntries = entries || [];
-  const totalPages = Math.ceil((totalCount || 0) / (pageSize || 25)) || 1;
 
   // Compute effective amounts and corrections mapping
   const entriesWithEffective = useMemo(() => {
@@ -304,11 +307,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
           </Box>
         )}
 
-        {totalPages > 1 && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-            <Pagination count={totalPages} page={page} onChange={(_, val) => onPageChange(val)} color="primary" size="small" />
-          </Box>
-        )}
+        <TablePaginationBar page={page} pageSize={pageSize} total={totalCount} loading={loading} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange ?? (() => {})} />
       </Paper>
     );
   }
@@ -411,16 +410,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
         </Table>
       </TableContainer>
 
-      {totalPages > 1 && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <Pagination
-            count={totalPages}
-            page={page}
-            onChange={(_, val) => onPageChange(val)}
-            color="primary"
-          />
-        </Box>
-      )}
+      <TablePaginationBar page={page} pageSize={pageSize} total={totalCount} loading={loading} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange ?? (() => {})} />
     </Paper>
   );
 };

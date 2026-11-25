@@ -69,6 +69,7 @@ export const WalletDetailPage: React.FC = () => {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [totalEntries, setTotalEntries] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +94,7 @@ export const WalletDetailPage: React.FC = () => {
 
   // Actions menu
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const isFetchingRef = useRef<boolean>(false);
+  const requestSeqRef = useRef(0);
 
   const refreshPendingOnly = useCallback(async () => {
     if (!id) return;
@@ -129,8 +130,8 @@ export const WalletDetailPage: React.FC = () => {
   }, [id, user?.id]);
 
   const fetchWalletData = useCallback(async () => {
-    if (!id || isFetchingRef.current) return;
-    isFetchingRef.current = true;
+    if (!id) return;
+    const seq = ++requestSeqRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -156,6 +157,7 @@ export const WalletDetailPage: React.FC = () => {
         offline_error: p.error_message,
       }));
 
+      if (seq !== requestSeqRef.current) return;
       const effectiveUserId = user?.id || getCurrentUserId() || undefined;
 
       if (isOnline) {
@@ -163,11 +165,12 @@ export const WalletDetailPage: React.FC = () => {
         let stmt: StatementResponse | null = null;
         let stmtError: unknown = null;
         try {
-          stmt = await getStatementApi(id, { page, limit: 50 });
+          stmt = await getStatementApi(id, { page, limit: pageSize });
         } catch (err) {
           stmtError = err;
         }
 
+        if (seq !== requestSeqRef.current) return;
         if (stmt) {
           setWallet(stmt.wallet);
 
@@ -195,6 +198,7 @@ export const WalletDetailPage: React.FC = () => {
           // Fallback to cache on server error (503 / 500 / network error)
           console.warn('[WalletDetailPage] Server offline or fetch failed, falling back to cache:', stmtError);
           const cached = await getCachedStatement(id, effectiveUserId);
+          if (seq !== requestSeqRef.current) return;
           if (cached?.data) {
             const cachedStmt = cached.data;
             setWallet(cachedStmt.wallet);
@@ -212,6 +216,7 @@ export const WalletDetailPage: React.FC = () => {
           } else {
             // Check if wallet exists in cached wallets list
             const cachedWalletsRecord = await getCachedWallets('all', effectiveUserId);
+            if (seq !== requestSeqRef.current) return;
             const foundWallet = cachedWalletsRecord?.wallets.find((w) => w.id === id);
             if (foundWallet) {
               setWallet(foundWallet);
@@ -234,6 +239,7 @@ export const WalletDetailPage: React.FC = () => {
       } else {
         // Offline: retrieve from cache
         const cached = await getCachedStatement(id, effectiveUserId);
+        if (seq !== requestSeqRef.current) return;
         if (cached?.data) {
           const cachedStmt = cached.data;
           setWallet(cachedStmt.wallet);
@@ -250,6 +256,7 @@ export const WalletDetailPage: React.FC = () => {
           setLastSyncedAt(cached.cached_at);
         } else {
           const cachedWalletsRecord = await getCachedWallets('all', effectiveUserId);
+          if (seq !== requestSeqRef.current) return;
           const foundWallet = cachedWalletsRecord?.wallets.find((w) => w.id === id);
           if (foundWallet) {
             setWallet(foundWallet);
@@ -269,17 +276,22 @@ export const WalletDetailPage: React.FC = () => {
         }
       }
     } catch (err: unknown) {
+      if (seq !== requestSeqRef.current) return;
       const apiErr = err as { message?: string };
       setError(apiErr.message || 'Gagal memuat data buku ledger.');
     } finally {
-      isFetchingRef.current = false;
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [id, page, isOnline, user?.id]);
+  }, [id, page, pageSize, isOnline, user?.id]);
 
   useEffect(() => {
     fetchWalletData();
   }, [fetchWalletData]);
+
+  useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(totalEntries / pageSize));
+    if (page > lastPage) setPage(lastPage);
+  }, [totalEntries, pageSize, page]);
 
   // Listen for sync completion event
   useEffect(() => {
@@ -624,8 +636,10 @@ export const WalletDetailPage: React.FC = () => {
         entries={entries}
         totalCount={totalEntries}
         page={page}
-        pageSize={50}
+        pageSize={pageSize}
         onPageChange={(p) => setPage(p)}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+        loading={loading}
         onCorrectEntry={(e) => {
           setSelectedEntryForCorrection(e);
           setOpenCorrectionModal(true);

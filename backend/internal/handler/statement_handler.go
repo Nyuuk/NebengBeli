@@ -97,6 +97,9 @@ func (h *StatementHandler) parseFilter(c *gin.Context) repository.EntryFilter {
 	if err != nil || limit <= 0 {
 		limit = 50
 	}
+	if limit > 200 {
+		limit = 200
+	}
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page <= 0 {
 		page = 1

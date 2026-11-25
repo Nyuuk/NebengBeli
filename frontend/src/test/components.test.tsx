@@ -110,7 +110,7 @@ describe('UI Component Integration Tests', () => {
     expect(screen.getByText(/@rendy/i)).toBeDefined();
   });
 
-  it('renders StatementView with effective amount calculations', () => {
+  it('renders StatementView pagination footer even when entries fit page and forwards handlers', () => {
     const entries: Entry[] = [
       {
         id: 'orig-1',
@@ -140,13 +140,16 @@ describe('UI Component Integration Tests', () => {
       },
     ];
 
+    const onPageChange = vi.fn();
+    const onPageSizeChange = vi.fn();
     render(
       <StatementView
         entries={entries}
-        totalCount={2}
+        totalCount={60}
         page={1}
-        pageSize={25}
-        onPageChange={() => {}}
+        pageSize={50}
+        onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
         onCorrectEntry={() => {}}
         onMoveEntry={() => {}}
       />
@@ -154,6 +157,33 @@ describe('UI Component Integration Tests', () => {
 
     // Shows original struck-through and effective amount +40.000
     expect(screen.getByText('Ada 1 koreksi')).toBeDefined();
+    expect(screen.getByText('Menampilkan 1–50 dari 60')).toBeDefined();
+    expect(screen.getByLabelText('Baris per halaman')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    expect(onPageChange).toHaveBeenCalledWith(2);
+    fireEvent.change(screen.getByLabelText('Baris per halaman'), { target: { value: '25' } });
+    expect(onPageSizeChange).toHaveBeenCalledWith(25);
+  });
+
+  it('renders pagination footer in mobile viewport', () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: true,
+      media: '(max-width:600px)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    } as MediaQueryList);
+    try {
+      render(<StatementView entries={[]} totalCount={60} page={1} pageSize={50}
+        onPageChange={() => {}} onPageSizeChange={() => {}}
+        onCorrectEntry={() => {}} onMoveEntry={() => {}} />);
+      expect(screen.getByText('Menampilkan 1–50 dari 60')).toBeDefined();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   describe('EntryModal datetime-local & occurred_at behavior', () => {
