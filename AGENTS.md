@@ -1,0 +1,1 @@
+Patuhi semua standar warna, padding, typography, radius, dan komponen di DESIGN.md.
