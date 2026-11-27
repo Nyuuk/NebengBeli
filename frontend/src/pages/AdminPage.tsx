@@ -38,6 +38,7 @@ import {
   adminGetStatsApi,
   adminListUsersApi,
   adminResetPasswordApi,
+  adminPromoteUserApi,
   adminListWalletsApi,
   adminListAuditLogsApi,
   adminListEntriesApi,
@@ -75,6 +76,10 @@ export const AdminPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const [promoteTarget, setPromoteTarget] = useState<User | null>(null);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState(false);
 
   // Password reset modal
   const [openReset, setOpenReset] = useState<boolean>(false);
@@ -205,6 +210,23 @@ export const AdminPage: React.FC = () => {
   const paginationBar = (index: number) => (
     <TablePaginationBar {...pagination[index]} loading={loading} onPageChange={(page) => setPagination((p) => p.map((x, i) => i === index ? { ...x, page } : x))} onPageSizeChange={(pageSize) => setPagination((p) => p.map((x, i) => i === index ? { ...x, pageSize, page: 1 } : x))} />
   );
+
+  const handlePromote = async () => {
+    if (!promoteTarget || promoting) return;
+    setPromoting(true);
+    setPromoteError(null);
+    setMessage(null);
+    try {
+      await adminPromoteUserApi(promoteTarget.id);
+      setMessage(`Pengguna '${promoteTarget.username}' berhasil dipromosikan menjadi admin.`);
+      setPromoteTarget(null);
+      await fetchData(true);
+    } catch (err: unknown) {
+      setPromoteError((err as { message?: string }).message || 'Gagal mempromosikan pengguna.');
+    } finally {
+      setPromoting(false);
+    }
+  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -373,6 +395,17 @@ export const AdminPage: React.FC = () => {
                           >
                             Reset Password
                           </Button>
+                          {u.role === 'user' && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<SecurityIcon />}
+                              sx={{ m: 0.5, borderRadius: 1, whiteSpace: 'nowrap' }}
+                              onClick={() => { setPromoteTarget(u); setPromoteError(null); }}
+                            >
+                              Promosikan ke Admin
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -687,6 +720,30 @@ export const AdminPage: React.FC = () => {
           )}
         </>
       )}
+
+      <Dialog
+        open={Boolean(promoteTarget)}
+        onClose={() => { if (!promoting) setPromoteTarget(null); }}
+        aria-labelledby="promote-dialog-title"
+        aria-describedby="promote-dialog-description"
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 1.5 } }}
+      >
+        <DialogTitle id="promote-dialog-title" sx={{ p: 2.5, fontWeight: 700 }}>Promosikan Pengguna ke Admin?</DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          <Typography id="promote-dialog-description" variant="body1" color="text.secondary">
+            Pengguna <strong>{promoteTarget?.username}</strong> akan mendapat seluruh akses admin, termasuk pengelolaan pengguna dan data sistem. Akses berlaku langsung tanpa login ulang.
+          </Typography>
+          {promoteError && <Alert severity="error" sx={{ mt: 2 }}>{promoteError}</Alert>}
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, py: 1.5, flexWrap: 'wrap', gap: 1 }}>
+          <Button color="inherit" disabled={promoting} onClick={() => setPromoteTarget(null)} sx={{ borderRadius: 1 }}>Batal</Button>
+          <Button variant="contained" disabled={promoting} onClick={handlePromote} sx={{ borderRadius: 1 }}>
+            {promoting ? 'Memproses...' : 'Ya, Promosikan'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={openReset} onClose={() => { if (!isSubmitting) { setOpenReset(false); setNewPassword(''); setResetUsername(''); setResetError(null); } }} maxWidth="xs" fullWidth>

@@ -30,6 +30,7 @@ type AuthService interface {
 	ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error
 	ResetPassword(ctx context.Context, userID uuid.UUID, newPassword string) error
 	AdminResetPassword(ctx context.Context, adminID uuid.UUID, targetUsername, newPassword string) error
+	AdminPromoteUser(ctx context.Context, adminID, targetID uuid.UUID) (*model.UserResponse, error)
 	SeedAdminUser(ctx context.Context, username, password string) error
 }
 
@@ -341,6 +342,38 @@ func (s *authService) AdminResetPassword(ctx context.Context, adminID uuid.UUID,
 	})
 
 	return nil
+}
+
+func (s *authService) AdminPromoteUser(ctx context.Context, adminID, targetID uuid.UUID) (*model.UserResponse, error) {
+	target, err := s.userRepo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, err
+	}
+	if target.Role != model.RoleUser {
+		return nil, repository.ErrRoleConflict
+	}
+	if err := s.userRepo.UpdateRole(ctx, targetID, model.RoleUser, model.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	entityID := targetID.String()
+	meta, _ := json.Marshal(map[string]interface{}{
+		"target_username": target.Username,
+		"admin_id":        adminID.String(),
+		"old_role":        model.RoleUser,
+		"new_role":        model.RoleAdmin,
+	})
+	// Follow the existing admin audit convention.
+	_ = s.auditRepo.Create(ctx, &model.AuditLog{
+		ActorID:    &adminID,
+		Action:     "user_promote_admin",
+		TargetType: "user",
+		TargetID:   &entityID,
+		Metadata:   meta,
+	})
+	target.Role = model.RoleAdmin
+	resp := target.ToResponse()
+	return &resp, nil
 }
 
 func (s *authService) SeedAdminUser(ctx context.Context, username, password string) error {

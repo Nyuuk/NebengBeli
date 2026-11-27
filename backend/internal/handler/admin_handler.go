@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -77,6 +78,32 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+func (h *AdminHandler) PromoteUser(c *gin.Context) {
+	admin, ok := middleware.GetCurrentUser(c)
+	if !ok || admin == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	targetID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	user, err := h.authSvc.AdminPromoteUser(c.Request.Context(), admin.ID, targetID)
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, repository.ErrRoleConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to promote user"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "user promoted to admin successfully", "user": user})
 }
 
 func (h *AdminHandler) ResetPassword(c *gin.Context) {

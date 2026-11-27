@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrUserNotFound      = errors.New("user not found")
+	ErrRoleConflict      = errors.New("user is already admin or no longer has role user")
 	ErrUsernameDuplicate = errors.New("username already exists")
 )
 
@@ -23,6 +24,7 @@ type UserRepository interface {
 	UpdateUsername(ctx context.Context, id uuid.UUID, newUsername string) error
 	IncrementTokenVersion(ctx context.Context, id uuid.UUID) (int, error)
 	UpdatePassword(ctx context.Context, id uuid.UUID, newPasswordHash string) error
+	UpdateRole(ctx context.Context, id uuid.UUID, oldRole, newRole model.UserRole) error
 	List(ctx context.Context, limit, offset int) ([]model.User, int64, error)
 	Count(ctx context.Context) (int64, error)
 }
@@ -168,6 +170,23 @@ func (r *sqlUserRepository) UpdatePassword(ctx context.Context, id uuid.UUID, ne
 	}
 	if rows == 0 {
 		return ErrUserNotFound
+	}
+	return nil
+}
+
+// UpdateRole uses compare-and-set to prevent duplicate promotions under concurrent requests.
+// Roles are loaded from the database on each authenticated request; token_version is unchanged.
+func (r *sqlUserRepository) UpdateRole(ctx context.Context, id uuid.UUID, oldRole, newRole model.UserRole) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE users SET role = $1 WHERE id = $2 AND role = $3`, newRole, id, oldRole)
+	if err != nil {
+		return fmt.Errorf("failed to update role: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrRoleConflict
 	}
 	return nil
 }

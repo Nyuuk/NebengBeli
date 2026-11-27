@@ -169,6 +169,7 @@ func main() {
 			{
 				admin.GET("/users", adminHandler.ListUsers)
 				admin.POST("/users/reset-password", adminHandler.ResetPassword)
+				admin.POST("/users/:id/promote", adminHandler.PromoteUser)
 				admin.GET("/wallets", adminHandler.ListWallets)
 				admin.GET("/audit-logs", adminHandler.ListAuditLogs)
 				admin.GET("/stats", adminHandler.GetStats)

@@ -34,6 +34,12 @@ export async function adminListUsersApi(limit = 50, offset = 0): Promise<{ users
   return { users: data.users, total: typeof data.total === 'number' ? data.total : data.users.length };
 }
 
+export async function adminPromoteUserApi(userId: string): Promise<{ message: string; user: User }> {
+  return request<{ message: string; user: User }>(`/api/admin/users/${encodeURIComponent(userId)}/promote`, {
+    method: 'POST',
+  });
+}
+
 export async function adminResetPasswordApi(targetUsername: string, newPassword: string): Promise<{ message: string }> {
   return request<{ message: string }>('/api/admin/users/reset-password', {
     method: 'POST',

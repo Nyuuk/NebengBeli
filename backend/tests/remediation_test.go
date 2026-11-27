@@ -499,6 +499,15 @@ func (m *mockUserRepo) UpdateUsername(ctx context.Context, id uuid.UUID, newUser
 	return nil
 }
 
+func (m *mockUserRepo) UpdateRole(ctx context.Context, id uuid.UUID, oldRole, newRole model.UserRole) error {
+	u, ok := m.usersByID[id]
+	if !ok || u.Role != oldRole {
+		return repository.ErrRoleConflict
+	}
+	u.Role = newRole
+	return nil
+}
+
 func (m *mockUserRepo) IncrementTokenVersion(ctx context.Context, id uuid.UUID) (int, error) {
 	if u, ok := m.usersByID[id]; ok {
 		u.TokenVersion++
