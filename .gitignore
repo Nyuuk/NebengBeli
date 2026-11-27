@@ -33,6 +33,9 @@ certs/
 # Docker
 postgres_data/
 
+# Local database dumps
+*.dump
+
 # Test artifacts & logs
 test-results/local-*.log
 test-results/smoke-*.log
