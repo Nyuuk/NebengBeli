@@ -54,8 +54,9 @@ jobs:
           git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
           git checkout --detach "refs/tags/${RELEASE_TAG}"
 
-      - name: Fetch notification credentials from Vault
-        uses: ./.github/actions/vault-secrets
+      # Temporarily disabled while Vault is unavailable
+      # - name: Fetch notification credentials from Vault
+      #   uses: ./.github/actions/vault-secrets
 
       - name: Resolve Commit SHA and Image Tags
         id: meta
@@ -188,47 +189,49 @@ jobs:
       #         }
       #       });
       #
-      - name: Send Telegram Notification for Success
-        if: success()
-        env:
-          DEPLOY_ENVIRONMENT: ${{ steps.meta.outputs.deploy_environment }}
-          IMAGE_TAGS: ${{ steps.meta.outputs.image_tags }}
-        run: |
-          MESSAGE="✅ *NebengBeli image build success*
+      # Temporarily disabled while Vault is unavailable
+      # - name: Send Telegram Notification for Success
+      #   if: success()
+      #   env:
+      #     DEPLOY_ENVIRONMENT: ${{ steps.meta.outputs.deploy_environment }}
+      #     IMAGE_TAGS: ${{ steps.meta.outputs.image_tags }}
+      #   run: |
+      #     MESSAGE="✅ *NebengBeli image build success*
+      #
+      #     *Environment:* \`${DEPLOY_ENVIRONMENT}\`
+      #     *Repository:* \`${GITHUB_REPOSITORY}\`
+      #     *Commit:* [${{ steps.meta.outputs.full_sha }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${{ steps.meta.outputs.full_sha }})
+      #     *Image tags:* \`${IMAGE_TAGS//$'\n'/, }\`
+      #     *Backend:* \`${{ steps.meta.outputs.backend_image }}\`
+      #     *Frontend:* \`${{ steps.meta.outputs.frontend_image }}\`"
+      #
+      #     curl --fail --silent --show-error --request POST \
+      #       "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+      #       --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+      #       --data-urlencode "message_thread_id=${TELEGRAM_TOPIC_ID}" \
+      #       --data-urlencode "parse_mode=Markdown" \
+      #       --data-urlencode "disable_web_page_preview=true" \
+      #       --data-urlencode "text=$MESSAGE"
 
-          *Environment:* \`${DEPLOY_ENVIRONMENT}\`
-          *Repository:* \`${GITHUB_REPOSITORY}\`
-          *Commit:* [${{ steps.meta.outputs.full_sha }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${{ steps.meta.outputs.full_sha }})
-          *Image tags:* \`${IMAGE_TAGS//$'\n'/, }\`
-          *Backend:* \`${{ steps.meta.outputs.backend_image }}\`
-          *Frontend:* \`${{ steps.meta.outputs.frontend_image }}\`"
-
-          curl --fail --silent --show-error --request POST \
-            "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "message_thread_id=${TELEGRAM_TOPIC_ID}" \
-            --data-urlencode "parse_mode=Markdown" \
-            --data-urlencode "disable_web_page_preview=true" \
-            --data-urlencode "text=$MESSAGE"
-
-      - name: Send Telegram Notification for Failure
-        if: failure()
-        env:
-          DEPLOY_ENVIRONMENT: ${{ steps.meta.outputs.deploy_environment }}
-          IMAGE_TAGS: ${{ steps.meta.outputs.image_tags }}
-        run: |
-          MESSAGE="❌ *NebengBeli image build failed*
-
-          *Environment:* \`${DEPLOY_ENVIRONMENT:-unknown}\`
-          *Repository:* \`${GITHUB_REPOSITORY}\`
-          *Commit:* [${{ steps.meta.outputs.full_sha }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${{ steps.meta.outputs.full_sha }})
-          *Image tags:* \`${IMAGE_TAGS//$'\n'/, }\`
-          *Workflow:* [View run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
-
-          curl --fail --silent --show-error --request POST \
-            "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "message_thread_id=${TELEGRAM_TOPIC_ID}" \
-            --data-urlencode "parse_mode=Markdown" \
-            --data-urlencode "disable_web_page_preview=true" \
-            --data-urlencode "text=$MESSAGE"
+      # Temporarily disabled while Vault is unavailable
+      # - name: Send Telegram Notification for Failure
+      #   if: failure()
+      #   env:
+      #     DEPLOY_ENVIRONMENT: ${{ steps.meta.outputs.deploy_environment }}
+      #     IMAGE_TAGS: ${{ steps.meta.outputs.image_tags }}
+      #   run: |
+      #     MESSAGE="❌ *NebengBeli image build failed*
+      #
+      #     *Environment:* \`${DEPLOY_ENVIRONMENT:-unknown}\`
+      #     *Repository:* \`${GITHUB_REPOSITORY}\`
+      #     *Commit:* [${{ steps.meta.outputs.full_sha }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${{ steps.meta.outputs.full_sha }})
+      #     *Image tags:* \`${IMAGE_TAGS//$'\n'/, }\`
+      #     *Workflow:* [View run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+      #
+      #     curl --fail --silent --show-error --request POST \
+      #       "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+      #       --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+      #       --data-urlencode "message_thread_id=${TELEGRAM_TOPIC_ID}" \
+      #       --data-urlencode "parse_mode=Markdown" \
+      #       --data-urlencode "disable_web_page_preview=true" \
+      #       --data-urlencode "text=$MESSAGE"
