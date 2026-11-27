@@ -44,7 +44,7 @@ func (h *LinkRequestHandler) Create(c *gin.Context) {
 		return
 	}
 
-	linkReq, err := h.linkSvc.CreateLinkRequest(c.Request.Context(), user.ID, walletID, reqBody.TargetUsername)
+	linkReq, err := h.linkSvc.CreateLinkRequest(c.Request.Context(), user.ID, user.Role, walletID, reqBody.TargetUsername)
 	if err != nil {
 		if err == service.ErrWalletPermissionDenied {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})

@@ -34,8 +34,9 @@ interface StatementViewProps {
   onPageChange: (newPage: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
   loading?: boolean;
-  onCorrectEntry: (entry: Entry) => void;
-  onMoveEntry: (entry: Entry) => void;
+  canManage?: boolean;
+  onCorrectEntry?: (entry: Entry) => void;
+  onMoveEntry?: (entry: Entry) => void;
   onDiscardFailedEntry?: (entry: Entry) => void;
   onMoveFailedEntry?: (entry: Entry) => void;
   onRetryFailedEntry?: (entry: Entry) => void;
@@ -50,6 +51,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
   onPageChange,
   onPageSizeChange,
   loading,
+  canManage = false,
   onCorrectEntry,
   onMoveEntry,
   onDiscardFailedEntry,
@@ -60,6 +62,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const safeEntries = entries || [];
+  const showActions = canManage && !isArchivedWallet;
 
   // Compute effective amounts and corrections mapping
   const entriesWithEffective = useMemo(() => {
@@ -127,6 +130,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
   };
 
   const renderActions = (e: Entry & { has_corrections?: boolean }) => {
+    if (!showActions) return null;
     const isCorrectionType = e.type === 'koreksi';
     const isActionDisabled = Boolean(e.is_offline_pending || isCorrectionType || isArchivedWallet);
 
@@ -134,17 +138,17 @@ export const StatementView: React.FC<StatementViewProps> = ({
       return (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
           <Tooltip title="Coba Sinkronkan Ulang">
-            <IconButton size="small" color="primary" onClick={() => onRetryFailedEntry?.(e)}>
+            <IconButton aria-label="Coba Sinkronkan Ulang" size="small" color="primary" onClick={() => onRetryFailedEntry?.(e)}>
               <ReplayIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title="Pindahkan ke Buku Lain">
-            <IconButton size="small" color="warning" onClick={() => onMoveFailedEntry?.(e)}>
+            <IconButton aria-label="Pindahkan ke Buku Lain" size="small" color="warning" onClick={() => onMoveFailedEntry?.(e)}>
               <SwapHorizIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title="Buang / Hapus Entri Gagal">
-            <IconButton size="small" color="error" onClick={() => onDiscardFailedEntry?.(e)}>
+            <IconButton aria-label="Buang / Hapus Entri Gagal" size="small" color="error" onClick={() => onDiscardFailedEntry?.(e)}>
               <DeleteOutlineIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -164,7 +168,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
           }
         >
           <span>
-            <IconButton size="small" disabled={isActionDisabled} onClick={() => onCorrectEntry(e)}>
+            <IconButton aria-label="Koreksi Entri" size="small" disabled={isActionDisabled} onClick={() => onCorrectEntry?.(e)}>
               <EditIcon fontSize="small" />
             </IconButton>
           </span>
@@ -179,7 +183,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
           }
         >
           <span>
-            <IconButton size="small" disabled={isActionDisabled} onClick={() => onMoveEntry(e)}>
+            <IconButton aria-label="Pindah ke Buku Lain" size="small" disabled={isActionDisabled} onClick={() => onMoveEntry?.(e)}>
               <SwapHorizIcon fontSize="small" />
             </IconButton>
           </span>
@@ -264,7 +268,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                     size="small"
                     color="warning"
                     variant="outlined"
-                    sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
+                    sx={{ mt: 0.5, height: 20, fontSize: '0.75rem' }}
                   />
                 )}
                 {e.offline_error && (
@@ -300,7 +304,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                       Saldo: {e.running_balance !== undefined ? formatRupiah(e.running_balance) : '-'}
                     </Typography>
                   </Box>
-                  {!isArchivedWallet && renderActions(e)}
+                  {showActions && renderActions(e)}
                 </Box>
               </Paper>
             ))}
@@ -324,7 +328,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
               <TableCell align="right" sx={{ fontWeight: 700 }}>Nominal</TableCell>
               <TableCell align="right" sx={{ fontWeight: 700 }}>Saldo Berjalan</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Pencatat</TableCell>
-              {!isArchivedWallet && (
+              {showActions && (
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Aksi</TableCell>
               )}
             </TableRow>
@@ -332,7 +336,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
           <TableBody>
             {entriesWithEffective.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isArchivedWallet ? 6 : 7} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={showActions ? 7 : 6} align="center" sx={{ py: 4 }}>
                   <Typography variant="body2" color="text.secondary">
                     Belum ada transaksi di buku ledger ini.
                   </Typography>
@@ -382,7 +386,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                         size="small"
                         color="warning"
                         variant="outlined"
-                        sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
+                        sx={{ mt: 0.5, height: 20, fontSize: '0.75rem' }}
                       />
                     )}
                     {e.offline_error && (
@@ -402,7 +406,7 @@ export const StatementView: React.FC<StatementViewProps> = ({
                       {e.created_by_username || 'System'}
                     </Typography>
                   </TableCell>
-                  {!isArchivedWallet && <TableCell align="center">{renderActions(e)}</TableCell>}
+                  {showActions && <TableCell align="center">{renderActions(e)}</TableCell>}
                 </TableRow>
               ))
             )}

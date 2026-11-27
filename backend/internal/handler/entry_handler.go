@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -220,7 +221,7 @@ func (h *EntryHandler) CreateBatch(c *gin.Context) {
 
 	resp, err := h.entrySvc.CreateBatchEntries(c.Request.Context(), user.ID, user.Role, reqBody)
 	if err != nil {
-		if err == service.ErrWalletPermissionDenied {
+		if errors.Is(err, service.ErrWalletPermissionDenied) {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
 		}

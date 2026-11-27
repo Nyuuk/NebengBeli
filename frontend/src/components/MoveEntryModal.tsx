@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import { moveEntryAdapter } from '../api/entries';
+import { fetchAllAdminActiveWallets } from '../api/adminWallets';
 import { getWalletsApi } from '../api/wallets';
 import { getCachedWallets } from '../offline/db';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
@@ -40,6 +41,9 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
 }) => {
   const { isOnline, refreshPendingCount } = useOnlineStatus();
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isValidTarget = (w: Wallet) => w.id !== sourceWalletId && !w.is_archived &&
+    (isAdmin || Boolean(user && (w.creator_id === user.id || w.user_role === 'creator' || w.user_role === 'both')));
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -50,21 +54,17 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
   useEffect(() => {
     if (open) {
       setLoadingWallets(true);
+      setSelectedWalletId('');
       const loadWallets = async () => {
         try {
           let list: Wallet[] = [];
           if (isOnline) {
-            list = await getWalletsApi(false);
+            list = isAdmin ? await fetchAllAdminActiveWallets() : await getWalletsApi(false);
           } else {
             const cached = await getCachedWallets('all', user?.id);
             list = cached?.wallets || [];
           }
-          const validWallets = (list || []).filter(
-            (w) =>
-              w.id !== sourceWalletId &&
-              !w.is_archived &&
-              (w.creator_id === user?.id || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
-          );
+          const validWallets = (list || []).filter(isValidTarget);
           setWallets(validWallets);
           if (validWallets.length > 0) {
             setSelectedWalletId(validWallets[0].id);
@@ -72,9 +72,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
         } catch {
           // Fallback to cache
           const cached = await getCachedWallets('all', user?.id);
-          const validWallets = (cached?.wallets || []).filter(
-            (w) => w.id !== sourceWalletId && !w.is_archived
-          );
+          const validWallets = (cached?.wallets || []).filter(isValidTarget);
           setWallets(validWallets);
           if (validWallets.length > 0) {
             setSelectedWalletId(validWallets[0].id);
@@ -86,7 +84,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
 
       loadWallets();
     }
-  }, [open, sourceWalletId, isOnline, user?.id]);
+  }, [open, sourceWalletId, isOnline, user?.id, isAdmin]);
 
   if (!targetEntry) return null;
 
@@ -100,7 +98,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (!selectedWalletId) {
+    if (!wallets.some((w) => w.id === selectedWalletId && isValidTarget(w))) {
       setError('Pilih wallet tujuan.');
       return;
     }
@@ -149,7 +147,7 @@ export const MoveEntryModal: React.FC<MoveEntryModalProps> = ({
             </Alert>
           )}
 
-          <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 2, mb: 2.5 }}>
+          <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 1.5, mb: 2.5 }}>
             <Typography variant="caption" color="text.secondary">
               Entri yang akan Dipindah:
             </Typography>

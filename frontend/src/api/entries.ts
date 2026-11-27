@@ -169,6 +169,7 @@ async function executeOfflineMove(
     wallet_id: source_wallet_id,
     type: 'koreksi',
     amount: delta,
+    target_amount: 0,
     item_name: targetEntry.item_name,
     note: corrNote,
     corrects_entry_id: targetEntry.id,

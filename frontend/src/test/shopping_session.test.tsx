@@ -16,6 +16,10 @@ import * as syncModule from '../offline/sync';
 import * as walletsApi from '../api/wallets';
 import { Wallet, ItemSuggestion } from '../types';
 
+vi.mock('../context/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-ob', role: 'user' } }),
+}));
+
 describe('Sesi Belanja (F1 Multi-row Batch Entry)', () => {
   const mockWallets: Wallet[] = [
     {

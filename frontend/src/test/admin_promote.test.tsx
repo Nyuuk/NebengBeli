@@ -1,4 +1,5 @@
 import React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AdminPage } from '../pages/AdminPage';
@@ -18,7 +19,7 @@ beforeEach(() => {
 });
 
 async function openDialog() {
-  render(<AdminPage />);
+  render(<MemoryRouter><AdminPage /></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button', { name: 'Promosikan ke Admin' }));
   return screen.findByRole('dialog', { name: 'Promosikan Pengguna ke Admin?' });
 }

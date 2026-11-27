@@ -30,7 +30,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 import { Layout } from '../components/Layout';
 import { BalanceCard, formatRupiah } from '../components/BalanceCard';
@@ -43,6 +43,7 @@ import { UnlinkWalletModal } from '../components/UnlinkWalletModal';
 import { RekapTextModal } from '../components/RekapTextModal';
 
 import { updateWalletNameApi, archiveWalletApi, unarchiveWalletApi, getWalletsApi } from '../api/wallets';
+import { fetchAllAdminActiveWallets } from '../api/adminWallets';
 import { getStatementApi, getExportCSVUrl } from '../api/statements';
 import {
   getPendingOfflineEntriesByWallet,
@@ -61,6 +62,8 @@ import { Wallet, Entry, StatementSummary, StatementResponse } from '../types';
 export const WalletDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const backPath = location.pathname.startsWith('/admin/wallets/') ? '/admin?tab=wallets' : '/';
   const { user } = useAuth();
   const { isOnline, refreshPendingCount, triggerSync } = useOnlineStatus();
 
@@ -95,6 +98,11 @@ export const WalletDetailPage: React.FC = () => {
   // Actions menu
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const requestSeqRef = useRef(0);
+  const isCreator = Boolean(
+    wallet && user && (wallet.creator_id === user.id || wallet.user_role === 'creator' || wallet.user_role === 'both')
+  );
+  const isAdmin = user?.role === 'admin';
+  const canManage = isCreator || isAdmin;
 
   const refreshPendingOnly = useCallback(async () => {
     if (!id) return;
@@ -344,6 +352,7 @@ export const WalletDetailPage: React.FC = () => {
   };
 
   const handleDiscardFailedEntry = async (entry: Entry) => {
+    if (!canManage) return;
     const confirmDiscard = window.confirm(
       `Apakah Anda yakin ingin membuang entri "${entry.item_name}" yang gagal tersinkronisasi ini?`
     );
@@ -360,6 +369,7 @@ export const WalletDetailPage: React.FC = () => {
   };
 
   const handleRetryFailedEntry = async (entry: Entry) => {
+    if (!canManage) return;
     try {
       await retryFailedOfflineEntry(entry.client_id);
       await refreshPendingCount();
@@ -373,14 +383,19 @@ export const WalletDetailPage: React.FC = () => {
     }
   };
 
+  const isValidMoveTarget = (w: Wallet) => !w.is_archived && w.id !== id &&
+    (isAdmin || Boolean(user && (w.creator_id === user.id || w.user_role === 'creator' || w.user_role === 'both')));
+
   const handleOpenMoveFailedModal = async (entry: Entry) => {
+    if (!canManage) return;
     setSelectedFailedEntry(entry);
+    setSelectedTargetWalletId('');
     const effectiveUserId = user?.id || getCurrentUserId() || undefined;
     try {
       let list: Wallet[] = [];
       if (isOnline) {
         try {
-          list = await getWalletsApi(false);
+          list = isAdmin ? await fetchAllAdminActiveWallets() : await getWalletsApi(false);
         } catch {
           const cached = await getCachedWallets('all', effectiveUserId);
           list = cached?.wallets || [];
@@ -389,7 +404,7 @@ export const WalletDetailPage: React.FC = () => {
         const cached = await getCachedWallets('all', effectiveUserId);
         list = cached?.wallets || [];
       }
-      const valid = list.filter((w) => w.id !== id && !w.is_archived);
+      const valid = list.filter(isValidMoveTarget);
       setAvailableTargetWallets(valid);
       if (valid.length > 0) {
         setSelectedTargetWalletId(valid[0].id);
@@ -401,7 +416,11 @@ export const WalletDetailPage: React.FC = () => {
   };
 
   const handleConfirmMoveFailed = async () => {
-    if (!selectedFailedEntry || !selectedTargetWalletId) return;
+    if (!canManage || !selectedFailedEntry || !selectedTargetWalletId) return;
+    if (!availableTargetWallets.some((w) => w.id === selectedTargetWalletId && isValidMoveTarget(w))) {
+      setError('Pilih buku tujuan aktif dengan akses kreator.');
+      return;
+    }
 
     try {
       // Moves the failed entry to the selected target wallet while preserving client_id and timestamps
@@ -421,7 +440,7 @@ export const WalletDetailPage: React.FC = () => {
 
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !renameValue.trim()) return;
+    if (!canManage || !id || !renameValue.trim()) return;
 
     try {
       await updateWalletNameApi(id, renameValue.trim());
@@ -434,7 +453,7 @@ export const WalletDetailPage: React.FC = () => {
   };
 
   const handleToggleArchive = async () => {
-    if (!id || !wallet) return;
+    if (!canManage || !id || !wallet) return;
     setMenuAnchor(null);
 
     if (!wallet.is_archived && wallet.balance !== 0) {
@@ -457,10 +476,6 @@ export const WalletDetailPage: React.FC = () => {
     }
   };
 
-  const isCreator = Boolean(
-    wallet && (wallet.creator_id === user?.id || wallet.user_role === 'creator' || wallet.user_role === 'both' || !wallet.user_role)
-  );
-
   if (loading && !wallet) {
     return (
       <Layout>
@@ -477,7 +492,7 @@ export const WalletDetailPage: React.FC = () => {
         <Alert severity="error" sx={{ mb: 2 }}>
           {error || 'Buku ledger tidak ditemukan atau Anda tidak memiliki akses.'}
         </Alert>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backPath)}>
           Kembali ke Beranda
         </Button>
       </Layout>
@@ -489,7 +504,7 @@ export const WalletDetailPage: React.FC = () => {
       {/* Header Bar */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton onClick={() => navigate('/')} sx={{ mr: 0.5 }}>
+          <IconButton aria-label="Kembali" onClick={() => navigate(backPath)} sx={{ mr: 0.5 }}>
             <ArrowBackIcon />
           </IconButton>
           <Box>
@@ -528,7 +543,7 @@ export const WalletDetailPage: React.FC = () => {
             Rekap Teks
           </Button>
 
-          {!wallet.is_archived && isCreator && (
+          {!wallet.is_archived && canManage && (
             <>
               {!wallet.owner_username ? (
                 <Button
@@ -562,7 +577,7 @@ export const WalletDetailPage: React.FC = () => {
             </>
           )}
 
-          <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
+          <IconButton aria-label="Menu buku" onClick={(e) => setMenuAnchor(e.currentTarget)}>
             <MoreVertIcon />
           </IconButton>
 
@@ -577,7 +592,7 @@ export const WalletDetailPage: React.FC = () => {
             <MenuItem onClick={() => { setMenuAnchor(null); window.open(getExportCSVUrl(wallet.id), '_blank'); }}>
               <FileDownloadIcon fontSize="small" sx={{ mr: 1 }} /> Unduh CSV Laporan
             </MenuItem>
-            {isCreator && (
+            {canManage && (
               <>
                 <MenuItem onClick={() => { setMenuAnchor(null); setRenameValue(wallet.name); setOpenRenameModal(true); }}>
                   <EditIcon fontSize="small" sx={{ mr: 1 }} /> Ganti Nama Buku
@@ -619,7 +634,7 @@ export const WalletDetailPage: React.FC = () => {
 
       {/* Statement Table Section */}
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
+        <Typography variant="h6" component="h2" sx={{ fontWeight: 700, fontSize: { xs: '1.25rem', sm: '1.5rem' } }}>
           Daftar Rekam Transaksi (Statement)
         </Typography>
 
@@ -640,21 +655,23 @@ export const WalletDetailPage: React.FC = () => {
         onPageChange={(p) => setPage(p)}
         onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
         loading={loading}
-        onCorrectEntry={(e) => {
+        canManage={canManage}
+        onCorrectEntry={canManage ? (e) => {
           setSelectedEntryForCorrection(e);
           setOpenCorrectionModal(true);
-        }}
-        onMoveEntry={(e) => {
+        } : undefined}
+        onMoveEntry={canManage ? (e) => {
           setSelectedEntryForMove(e);
           setOpenMoveModal(true);
-        }}
-        onDiscardFailedEntry={handleDiscardFailedEntry}
-        onMoveFailedEntry={handleOpenMoveFailedModal}
-        onRetryFailedEntry={handleRetryFailedEntry}
+        } : undefined}
+        onDiscardFailedEntry={canManage ? handleDiscardFailedEntry : undefined}
+        onMoveFailedEntry={canManage ? handleOpenMoveFailedModal : undefined}
+        onRetryFailedEntry={canManage ? handleRetryFailedEntry : undefined}
         isArchivedWallet={wallet.is_archived}
       />
 
       {/* Modals */}
+      {canManage && <>
       <EntryModal
         open={openEntryModal}
         walletId={wallet.id}
@@ -693,6 +710,8 @@ export const WalletDetailPage: React.FC = () => {
         onSuccess={() => fetchWalletData()}
       />
 
+      </>}
+
       <RekapTextModal
         open={openRekapModal}
         wallet={wallet}
@@ -700,6 +719,7 @@ export const WalletDetailPage: React.FC = () => {
         onClose={() => setOpenRekapModal(false)}
       />
 
+      {canManage && <>
       {/* Rename Dialog */}
       <Dialog open={openRenameModal} onClose={() => setOpenRenameModal(false)} maxWidth="xs" fullWidth>
         <form onSubmit={handleRename}>
@@ -770,6 +790,7 @@ export const WalletDetailPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      </>}
     </Layout>
   );
 };

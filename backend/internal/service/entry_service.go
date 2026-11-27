@@ -81,16 +81,20 @@ func (s *entryService) CreateEntry(ctx context.Context, userID uuid.UUID, userRo
 		return nil, false, errors.New("wallet_id is required")
 	}
 
-	// 1. Authorization and active status check: Only the wallet creator can record financial ledger entries
+	// 1. Only the wallet creator or an admin can record entries in an active wallet.
 	wallet, err := s.walletRepo.GetByID(ctx, req.WalletID)
 	if err != nil {
 		return nil, false, err
 	}
-	if wallet.CreatorID != userID {
+	if wallet.CreatorID != userID && userRole != model.RoleAdmin {
 		return nil, false, ErrWalletPermissionDenied
 	}
 	if wallet.ArchivedAt != nil {
 		return nil, false, ErrArchivedWallet
+	}
+
+	if req.Type != model.EntryTypeKoreksi && req.CorrectsEntryID != nil {
+		return nil, false, errors.New("corrects_entry_id is only allowed for koreksi entries")
 	}
 
 	var signedAmount int64
@@ -261,20 +265,23 @@ func (s *entryService) MoveEntry(ctx context.Context, userID uuid.UUID, userRole
 		return nil, nil, errors.New("source and destination wallets cannot be identical")
 	}
 
-	// 1. Authorization checks: Creator must own both source and target wallets
+	// 1. Non-admins must be the creator of both source and target wallets.
 	srcWallet, err := s.walletRepo.GetByID(ctx, req.SourceWalletID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if srcWallet.CreatorID != userID {
+	if srcWallet.CreatorID != userID && userRole != model.RoleAdmin {
 		return nil, nil, ErrWalletPermissionDenied
+	}
+	if srcWallet.ArchivedAt != nil {
+		return nil, nil, ErrArchivedWallet
 	}
 
 	dstWallet, err := s.walletRepo.GetByID(ctx, req.TargetWalletID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if dstWallet.CreatorID != userID {
+	if dstWallet.CreatorID != userID && userRole != model.RoleAdmin {
 		return nil, nil, ErrWalletPermissionDenied
 	}
 	if dstWallet.ArchivedAt != nil {
@@ -354,8 +361,8 @@ func (s *entryService) CreateBatchEntries(ctx context.Context, userID uuid.UUID,
 			walletsCache[item.WalletID] = wallet
 		}
 
-		// Verify creator and active status
-		if wallet.CreatorID != userID {
+		// Verify creator/admin permission and active status.
+		if wallet.CreatorID != userID && userRole != model.RoleAdmin {
 			return nil, fmt.Errorf("entry at row %d: %w", i+1, ErrWalletPermissionDenied)
 		}
 		if wallet.ArchivedAt != nil {

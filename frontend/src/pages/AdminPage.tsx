@@ -23,6 +23,7 @@ import {
   DialogActions,
   TextField,
 } from '@mui/material';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import PeopleIcon from '@mui/icons-material/People';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
@@ -57,8 +58,17 @@ import {
   AdminTrends,
 } from '../types';
 
+const adminTabs = ['users', 'wallets', 'entries', 'creators', 'trends', 'audit'];
+
 export const AdminPage: React.FC = () => {
-  const [tab, setTab] = useState<number>(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = Math.max(0, adminTabs.indexOf(searchParams.get('tab') || 'users'));
+  const setTab = (index: number) => {
+    setSearchParams((params) => {
+      params.set('tab', adminTabs[index]);
+      return params;
+    });
+  };
   const [trendSubTab, setTrendSubTab] = useState<number>(0);
   const [pagination, setPagination] = useState(() => Array.from({ length: 6 }, () => ({ page: 1, pageSize: 50, total: 0 })));
   const requestSeqRef = useRef(0);
@@ -429,10 +439,11 @@ export const AdminPage: React.FC = () => {
                       <TableCell sx={{ fontWeight: 700 }}>Pemilik (Owner)</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 700 }}>Saldo</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>Aksi</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {wallets.length === 0 ? <TableRow><TableCell colSpan={6} align="center">Tidak ada data buku.</TableCell></TableRow> : wallets.map((w) => (
+                    {wallets.length === 0 ? <TableRow><TableCell colSpan={7} align="center">Tidak ada data buku.</TableCell></TableRow> : wallets.map((w) => (
                       <TableRow key={w.id} hover>
                         <TableCell><code style={{ whiteSpace: 'nowrap' }}>{w.id.substring(0, 8)}...</code></TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>{w.name}</TableCell>
@@ -445,6 +456,11 @@ export const AdminPage: React.FC = () => {
                             size="small"
                             color={w.is_archived ? 'default' : 'success'}
                           />
+                        </TableCell>
+                        <TableCell>
+                          <Button component={RouterLink} to={`/admin/wallets/${w.id}`} variant="outlined" size="small">
+                            Detail
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

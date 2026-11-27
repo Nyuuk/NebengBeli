@@ -19,7 +19,7 @@ var (
 )
 
 type LinkService interface {
-	CreateLinkRequest(ctx context.Context, requestedBy uuid.UUID, walletID uuid.UUID, targetUsername string) (*model.LinkRequest, error)
+	CreateLinkRequest(ctx context.Context, requestedBy uuid.UUID, userRole model.UserRole, walletID uuid.UUID, targetUsername string) (*model.LinkRequest, error)
 	ApproveLinkRequest(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*model.LinkRequest, error)
 	RejectLinkRequest(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*model.LinkRequest, error)
 	GetLinkRequest(ctx context.Context, id uuid.UUID) (*model.LinkRequest, error)
@@ -47,12 +47,12 @@ func NewLinkService(
 	}
 }
 
-func (s *linkService) CreateLinkRequest(ctx context.Context, requestedBy uuid.UUID, walletID uuid.UUID, targetUsername string) (*model.LinkRequest, error) {
+func (s *linkService) CreateLinkRequest(ctx context.Context, requestedBy uuid.UUID, userRole model.UserRole, walletID uuid.UUID, targetUsername string) (*model.LinkRequest, error) {
 	wallet, err := s.walletRepo.GetByID(ctx, walletID)
 	if err != nil {
 		return nil, err
 	}
-	if wallet.CreatorID != requestedBy {
+	if wallet.CreatorID != requestedBy && userRole != model.RoleAdmin {
 		return nil, ErrWalletPermissionDenied
 	}
 	if wallet.ArchivedAt != nil {
@@ -115,6 +115,14 @@ func (s *linkService) ApproveLinkRequest(ctx context.Context, userID uuid.UUID, 
 
 	if req.TargetUserID != userID {
 		return nil, errors.New("this link request was directed to a different user")
+	}
+
+	wallet, err := s.walletRepo.GetByID(ctx, req.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	if wallet.ArchivedAt != nil {
+		return nil, ErrArchivedWallet
 	}
 
 	// Update wallet owner

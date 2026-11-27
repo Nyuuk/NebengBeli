@@ -276,6 +276,7 @@ describe('Correction Serialization and Offline Contract Alignment', () => {
 
 describe('Typed Admin API Adapters & Malformed Response Rejection', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/admin');
     vi.restoreAllMocks();
   });
 
@@ -424,7 +425,7 @@ describe('Typed Admin API Adapters & Malformed Response Rejection', () => {
 });
 
 describe('AdminPage pagination and request races', () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, '', '/admin'); });
 
   const renderAdminPage = () => render(<BrowserRouter><AuthProvider><OnlineStatusProvider><AdminPage /></OnlineStatusProvider></AuthProvider></BrowserRouter>);
   const emptyEntries = (total = 0, name?: string) => ({
@@ -523,6 +524,7 @@ describe('AdminPage pagination and request races', () => {
 
 describe('AdminPage Live Data Presentation', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/admin');
     vi.restoreAllMocks();
   });
 

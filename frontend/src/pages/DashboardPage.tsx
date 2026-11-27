@@ -109,7 +109,7 @@ export const DashboardPage: React.FC = () => {
           } else {
             // Compute fallback insights from active creator wallets
             const creatorWallets = onlineWallets.filter(
-              (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+              (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both')
             );
             const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
             const fallbackInsights: CreatorInsights = {
@@ -155,7 +155,7 @@ export const DashboardPage: React.FC = () => {
             setInsights(cachedInsightsRecord.data);
           } else if (cachedWalletsRecord?.wallets) {
             const creatorWallets = cachedWalletsRecord.wallets.filter(
-              (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+              (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both')
             );
             const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
             const fallbackInsights: CreatorInsights = {
@@ -194,7 +194,7 @@ export const DashboardPage: React.FC = () => {
           setInsights(cachedInsightsRecord.data);
         } else if (cachedWalletsRecord?.wallets) {
           const creatorWallets = cachedWalletsRecord.wallets.filter(
-            (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role)
+            (w) => !w.is_archived && (w.creator_id === effectiveUserId || w.user_role === 'creator' || w.user_role === 'both')
           );
           const moneyOutside = creatorWallets.reduce((sum, w) => sum + (w.balance < 0 ? -w.balance : 0), 0);
           const fallbackInsights: CreatorInsights = {
@@ -292,7 +292,7 @@ export const DashboardPage: React.FC = () => {
   const currentUserId = user?.id;
 
   const creatorWallets = useMemo(() => {
-    return wallets.filter((w) => !w.is_archived && (w.creator_id === currentUserId || w.user_role === 'creator' || w.user_role === 'both' || !w.user_role));
+    return wallets.filter((w) => !w.is_archived && (w.creator_id === currentUserId || w.user_role === 'creator' || w.user_role === 'both'));
   }, [wallets, currentUserId]);
 
   const ownerWallets = useMemo(() => {

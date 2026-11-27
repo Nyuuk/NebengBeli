@@ -1272,10 +1272,10 @@ func TestF1_BatchEntryCreationAndItemSuggestions(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// F3 Remediation Tests: Transaksi Koreksi & Creator-Only Ledger Writes
+// F3 Remediation Tests: Transaksi Koreksi & Creator/Admin Ledger Writes
 // -----------------------------------------------------------------------------
 
-func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
+func TestF3_CreatorOrAdminLedgerWritesAndCorrection(t *testing.T) {
 	entryRepo := &mockEntryRepo{entries: make(map[uuid.UUID]*model.Entry)}
 	walletRepo := &mockWalletRepo{wallets: make(map[uuid.UUID]*model.Wallet)}
 	auditRepo := &mockAuditRepo{}
@@ -1302,15 +1302,15 @@ func TestF3_CreatorOnlyLedgerWritesAndCorrection(t *testing.T) {
 		t.Fatalf("expected ErrWalletPermissionDenied for owner financial write, got: %v", err)
 	}
 
-	// 2. Admin attempts to write titipan -> MUST BE REJECTED
+	// 2. Admin writes titipan on another creator's wallet -> SUCCESS
 	_, _, err = entrySvc.CreateEntry(context.Background(), adminID, model.RoleAdmin, service.CreateEntryRequest{
 		WalletID: wallet1.ID,
 		Type:     model.EntryTypeTitipan,
 		Amount:   50000,
 		ItemName: "Nasi Ayam",
 	})
-	if err != service.ErrWalletPermissionDenied {
-		t.Fatalf("expected ErrWalletPermissionDenied for admin financial write, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected admin financial write to succeed, got: %v", err)
 	}
 
 	// 3. Creator writes titipan -> SUCCESS
@@ -1388,7 +1388,7 @@ func TestF6_OwnerLinkingAndUnlinking(t *testing.T) {
 	walletSvc := service.NewWalletService(walletRepo, userRepo, entryRepo, auditRepo)
 
 	// 1. Creator requests link to owner username
-	linkReq, err := linkSvc.CreateLinkRequest(context.Background(), creator.ID, wallet.ID, owner.Username)
+	linkReq, err := linkSvc.CreateLinkRequest(context.Background(), creator.ID, creator.Role, wallet.ID, owner.Username)
 	if err != nil {
 		t.Fatalf("expected create link request to succeed, got: %v", err)
 	}

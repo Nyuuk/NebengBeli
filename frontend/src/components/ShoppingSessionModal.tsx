@@ -44,6 +44,7 @@ import {
   setCachedSuggestions,
 } from '../offline/db';
 import { useOnlineStatus } from '../context/OnlineStatusContext';
+import { useAuth } from '../context/AuthContext';
 import { Wallet, ItemSuggestion, ShoppingSessionRow, BatchEntryItem } from '../types';
 import {
   getLocalDatetimeInputValue,
@@ -99,6 +100,7 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
   onSuccess,
 }) => {
   const { isOnline, refreshPendingCount } = useOnlineStatus();
+  const { user } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [rows, setRows] = useState<ShoppingSessionRow[]>([emptyRow(), emptyRow()]);
@@ -113,8 +115,8 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
 
   // Active creator wallets sorted by recent
   const activeWallets = useMemo(() => {
-    return (wallets || []).filter((w) => !w.is_archived && (w.user_role === 'creator' || w.user_role === 'both' || !w.user_role));
-  }, [wallets]);
+    return (wallets || []).filter((w) => !w.is_archived && Boolean(user) && (w.creator_id === user?.id || w.user_role === 'creator' || w.user_role === 'both'));
+  }, [wallets, user]);
 
   // Load suggestions for a wallet
   const fetchSuggestions = useCallback(async (walletId: string) => {
@@ -257,6 +259,11 @@ export const ShoppingSessionModal: React.FC<ShoppingSessionModalProps> = ({
     const hasInvalidRow = nonBlankRows.some((r) => !isRowValid(r));
     if (hasInvalidRow) {
       setError('Terdapat baris titipan yang belum lengkap. Mohon lengkapi buku, nama barang, dan nominal, atau hapus baris tersebut.');
+      return;
+    }
+
+    if (nonBlankRows.some((row) => !activeWallets.some((w) => w.id === row.wallet_id))) {
+      setError('Buku titipan tidak lagi aktif atau Anda tidak memiliki akses kreator. Pilih buku lain.');
       return;
     }
 

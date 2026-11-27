@@ -110,8 +110,9 @@ func (s *walletService) UpdateWalletName(ctx context.Context, walletID, userID u
 	if err != nil {
 		return err
 	}
-	// Only wallet creator can rename wallet
-	if wallet.CreatorID != userID {
+	// Only the wallet creator or an admin can rename the wallet.
+	isCreatorOrAdmin := wallet.CreatorID == userID || userRole == model.RoleAdmin
+	if !isCreatorOrAdmin {
 		return ErrWalletPermissionDenied
 	}
 
@@ -137,8 +138,9 @@ func (s *walletService) SetWalletArchived(ctx context.Context, walletID, userID 
 	if err != nil {
 		return err
 	}
-	// Only wallet creator can archive or unarchive wallet
-	if wallet.CreatorID != userID {
+	// Only the wallet creator or an admin can archive or unarchive the wallet.
+	isCreatorOrAdmin := wallet.CreatorID == userID || userRole == model.RoleAdmin
+	if !isCreatorOrAdmin {
 		return ErrWalletPermissionDenied
 	}
 
@@ -168,8 +170,9 @@ func (s *walletService) UnlinkWallet(ctx context.Context, walletID, userID uuid.
 	if err != nil {
 		return err
 	}
-	// Only creator can disconnect/unlink the wallet
-	if wallet.CreatorID != userID {
+	// Only the wallet creator or an admin can disconnect/unlink the wallet.
+	isCreatorOrAdmin := wallet.CreatorID == userID || userRole == model.RoleAdmin
+	if !isCreatorOrAdmin {
 		return ErrWalletPermissionDenied
 	}
 

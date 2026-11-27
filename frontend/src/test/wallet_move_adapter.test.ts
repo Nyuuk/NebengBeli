@@ -7,6 +7,7 @@ import {
   resetDBInstance,
 } from '../offline/db';
 import { Entry } from '../types';
+import { resetSyncCooldown, syncOfflineQueue } from '../offline/sync';
 
 describe('Wallet Move Typed Adapter & Mutation Replay', () => {
   const mockTargetEntry: Entry = {
@@ -96,6 +97,7 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
     expect(corrPending).toBeDefined();
     expect(corrPending?.wallet_id).toBe('wallet-source');
     expect(corrPending?.amount).toBe(35000);
+    expect(corrPending?.target_amount).toBe(0);
     expect(corrPending?.corrects_entry_id).toBe('entry-orig-101');
     expect(corrPending?.correction_reason).toBe('Salah Dompet');
 
@@ -104,6 +106,14 @@ describe('Wallet Move Typed Adapter & Mutation Replay', () => {
     expect(newPending?.wallet_id).toBe('wallet-target');
     expect(newPending?.amount).toBe(-35000);
     expect(newPending?.item_name).toBe('Bento Ayam');
+
+    const request = vi.spyOn(clientApi, 'request').mockResolvedValue({ entry: mockTargetEntry });
+    resetSyncCooldown();
+    expect(await syncOfflineQueue('user-ob', undefined, true)).toEqual({ synced: 2, failed: 0 });
+    const replay = request.mock.calls.map(([, options]) => JSON.parse(options?.body as string));
+    expect(replay.find((body) => body.type === 'koreksi')).toMatchObject({
+      amount: 0, target_amount: 0, corrects_entry_id: 'entry-orig-101',
+    });
   });
 
   it('decomposes into atomic offline correction and titipan mutations when server returns HTTP 503', async () => {
