@@ -22,6 +22,10 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import PeopleIcon from '@mui/icons-material/People';
@@ -34,6 +38,7 @@ import KeyIcon from '@mui/icons-material/Key';
 import { Layout } from '../components/Layout';
 import { ResponsiveTabs } from '../components/ResponsiveTabs';
 import { TablePaginationBar } from '../components/TablePaginationBar';
+import { AdminFilterBar } from '../components/AdminFilterBar';
 import { formatRupiah } from '../components/BalanceCard';
 import {
   adminGetStatsApi,
@@ -50,15 +55,52 @@ import {
 } from '../api/admin';
 import {
   User,
+  UserRole,
   Wallet,
   AuditLog,
   Entry,
+  EntryType,
   AdminPeriodSummary,
   AdminCreatorDetail,
   AdminTrends,
+  AdminUsersFilter,
+  AdminWalletsFilter,
+  AdminEntriesFilter,
+  AdminCreatorsFilter,
+  AdminAuditLogsFilter,
 } from '../types';
 
 const adminTabs = ['users', 'wallets', 'entries', 'creators', 'trends', 'audit'];
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+const AUDIT_ACTIONS = [
+  'user.register',
+  'user.login',
+  'user.logout',
+  'user.password_change',
+  'user.password_reset',
+  'user_promote_admin',
+  'user_update_username',
+  'wallet.create',
+  'wallet.update',
+  'wallet.archive',
+  'wallet.unarchive',
+  'wallet.unlink',
+  'entry.create',
+  'entry.batch_create',
+  'entry.correct',
+  'entry.move',
+  'link_request.create',
+  'link_request.approve',
+  'link_request.reject',
+] as const;
+
+const FILTER_SELECT_SX = {
+  minWidth: { xs: 0, sm: 165 },
+  width: { xs: '100%', sm: 'auto' },
+  '& .MuiOutlinedInput-root': { borderRadius: 1 },
+} as const;
 
 export const AdminPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -97,6 +139,95 @@ export const AdminPage: React.FC = () => {
   const [newPassword, setNewPassword] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  // Per-tab search & filter state
+  const [usersSearchInput, setUsersSearchInput] = useState<string>('');
+  const [usersSearch, setUsersSearch] = useState<string>('');
+  const [usersRole, setUsersRole] = useState<'' | UserRole>('');
+
+  const [walletsSearchInput, setWalletsSearchInput] = useState<string>('');
+  const [walletsSearch, setWalletsSearch] = useState<string>('');
+  const [walletsStatus, setWalletsStatus] = useState<'' | 'active' | 'archived'>('');
+  const [walletsLinked, setWalletsLinked] = useState<'' | 'linked' | 'unlinked'>('');
+
+  const [entriesSearchInput, setEntriesSearchInput] = useState<string>('');
+  const [entriesSearch, setEntriesSearch] = useState<string>('');
+  const [entriesType, setEntriesType] = useState<'' | EntryType>('');
+  const [entriesPeriod, setEntriesPeriod] = useState<'' | 'today' | 'this_week' | 'this_month'>('');
+
+  const [creatorsSearchInput, setCreatorsSearchInput] = useState<string>('');
+  const [creatorsSearch, setCreatorsSearch] = useState<string>('');
+  const [creatorsStatus, setCreatorsStatus] = useState<'' | 'has_outstanding' | 'has_active_wallets'>('');
+
+  const [auditSearchInput, setAuditSearchInput] = useState<string>('');
+  const [auditSearch, setAuditSearch] = useState<string>('');
+  const [auditTargetType, setAuditTargetType] = useState<string>('');
+  const [auditAction, setAuditAction] = useState<string>('');
+
+  const resetTabPageToFirst = useCallback((index: number) => {
+    setPagination((p) => p.map((x, i) => (i === index && x.page !== 1 ? { ...x, page: 1 } : x)));
+  }, []);
+
+  // Debounced search effects (300ms) + reset page to 1
+  useEffect(() => {
+    if (usersSearchInput === usersSearch) return;
+    const timer = window.setTimeout(() => {
+      setUsersSearch(usersSearchInput);
+      resetTabPageToFirst(0);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [usersSearchInput, usersSearch, resetTabPageToFirst]);
+
+  useEffect(() => {
+    if (walletsSearchInput === walletsSearch) return;
+    const timer = window.setTimeout(() => {
+      setWalletsSearch(walletsSearchInput);
+      resetTabPageToFirst(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [walletsSearchInput, walletsSearch, resetTabPageToFirst]);
+
+  useEffect(() => {
+    if (entriesSearchInput === entriesSearch) return;
+    const timer = window.setTimeout(() => {
+      setEntriesSearch(entriesSearchInput);
+      resetTabPageToFirst(2);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [entriesSearchInput, entriesSearch, resetTabPageToFirst]);
+
+  useEffect(() => {
+    if (creatorsSearchInput === creatorsSearch) return;
+    const timer = window.setTimeout(() => {
+      setCreatorsSearch(creatorsSearchInput);
+      resetTabPageToFirst(3);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [creatorsSearchInput, creatorsSearch, resetTabPageToFirst]);
+
+  useEffect(() => {
+    if (auditSearchInput === auditSearch) return;
+    const timer = window.setTimeout(() => {
+      setAuditSearch(auditSearchInput);
+      resetTabPageToFirst(5);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [auditSearchInput, auditSearch, resetTabPageToFirst]);
+
+  const hasUsersFilter = Boolean(usersSearchInput.trim() || usersRole);
+  const hasUsersAppliedFilter = Boolean(usersSearch.trim() || usersRole);
+
+  const hasWalletsFilter = Boolean(walletsSearchInput.trim() || walletsStatus || walletsLinked);
+  const hasWalletsAppliedFilter = Boolean(walletsSearch.trim() || walletsStatus || walletsLinked);
+
+  const hasEntriesFilter = Boolean(entriesSearchInput.trim() || entriesType || entriesPeriod);
+  const hasEntriesAppliedFilter = Boolean(entriesSearch.trim() || entriesType || entriesPeriod);
+
+  const hasCreatorsFilter = Boolean(creatorsSearchInput.trim() || creatorsStatus);
+  const hasCreatorsAppliedFilter = Boolean(creatorsSearch.trim() || creatorsStatus);
+
+  const hasAuditFilter = Boolean(auditSearchInput.trim() || auditTargetType || auditAction);
+  const hasAuditAppliedFilter = Boolean(auditSearch.trim() || auditTargetType || auditAction);
+
   const isServerPaginated = tab === 0 || tab === 1 || tab === 2 || tab === 5;
   const activePage = isServerPaginated ? pagination[tab].page : 1;
   const activePageSize = isServerPaginated ? pagination[tab].pageSize : 50;
@@ -109,29 +240,58 @@ export const AdminPage: React.FC = () => {
       setTabError((e) => ({ ...e, [tab]: null }));
 
       if (tab === 0) {
+        const usersFilter: AdminUsersFilter = {};
+        if (usersSearch.trim()) usersFilter.search = usersSearch.trim();
+        if (usersRole) usersFilter.role = usersRole;
+        const hasFilter = Object.keys(usersFilter).length > 0;
+
         const [statsData, usersData] = await Promise.all([
           adminGetStatsApi(),
-          adminListUsersApi(activePageSize, (activePage - 1) * activePageSize),
+          hasFilter
+            ? adminListUsersApi(activePageSize, (activePage - 1) * activePageSize, usersFilter)
+            : adminListUsersApi(activePageSize, (activePage - 1) * activePageSize),
         ]);
         if (seq !== requestSeqRef.current) return;
         setStats(statsData?.stats || null);
         setUsers(usersData?.users || []);
         setPagination((p) => p.map((x, i) => i === tab && x.total !== (usersData?.total ?? 0) ? { ...x, total: usersData?.total ?? 0 } : x));
       } else if (tab === 1) {
-        const walletsData = await adminListWalletsApi(activePageSize, (activePage - 1) * activePageSize);
+        const walletsFilter: AdminWalletsFilter = {};
+        if (walletsSearch.trim()) walletsFilter.search = walletsSearch.trim();
+        if (walletsStatus) walletsFilter.status = walletsStatus;
+        if (walletsLinked) walletsFilter.linked = walletsLinked;
+        const hasFilter = Object.keys(walletsFilter).length > 0;
+
+        const walletsData = hasFilter
+          ? await adminListWalletsApi(activePageSize, (activePage - 1) * activePageSize, walletsFilter)
+          : await adminListWalletsApi(activePageSize, (activePage - 1) * activePageSize);
         if (seq !== requestSeqRef.current) return;
         setWallets(walletsData?.wallets || []);
         setPagination((p) => p.map((x, i) => i === tab && x.total !== (walletsData?.total ?? 0) ? { ...x, total: walletsData?.total ?? 0 } : x));
       } else if (tab === 2) {
         try {
-          const entriesData = await adminListEntriesApi({ limit: activePageSize, offset: (activePage - 1) * activePageSize });
+          const entriesParams: AdminEntriesFilter = {
+            limit: activePageSize,
+            offset: (activePage - 1) * activePageSize,
+          };
+          if (entriesSearch.trim()) entriesParams.search = entriesSearch.trim();
+          if (entriesType) entriesParams.type = entriesType;
+          if (entriesPeriod) entriesParams.period = entriesPeriod;
+
+          const entriesData = await adminListEntriesApi(entriesParams);
           if (seq !== requestSeqRef.current) return;
           setEntries(entriesData?.entries || []);
           setPagination((p) => p.map((x, i) => i === tab && x.total !== (entriesData?.total ?? 0) ? { ...x, total: entriesData?.total ?? 0 } : x));
           let summary = entriesData?.summary || null;
           if (!summary) {
             try {
-              const summaryData = await adminGetSummaryApi();
+              const summaryFilter: AdminEntriesFilter = {};
+              if (entriesSearch.trim()) summaryFilter.search = entriesSearch.trim();
+              if (entriesType) summaryFilter.type = entriesType;
+              if (entriesPeriod) summaryFilter.period = entriesPeriod;
+              const summaryData = Object.keys(summaryFilter).length > 0
+                ? await adminGetSummaryApi(summaryFilter)
+                : await adminGetSummaryApi();
               if (seq !== requestSeqRef.current) return;
               summary = summaryData.summary || null;
             } catch {
@@ -155,7 +315,14 @@ export const AdminPage: React.FC = () => {
         }
       } else if (tab === 3) {
         try {
-          const creatorsData = await adminListCreatorsApi();
+          const creatorsFilter: AdminCreatorsFilter = {};
+          if (creatorsSearch.trim()) creatorsFilter.search = creatorsSearch.trim();
+          if (creatorsStatus) creatorsFilter.status = creatorsStatus;
+          const hasFilter = Object.keys(creatorsFilter).length > 0;
+
+          const creatorsData = hasFilter
+            ? await adminListCreatorsApi(creatorsFilter)
+            : await adminListCreatorsApi();
           if (seq !== requestSeqRef.current) return;
           setCreators(creatorsData?.creators || []);
           setPagination((p) => p.map((x, i) => i === tab && x.total !== (creatorsData?.total ?? creatorsData.creators.length) ? { ...x, total: creatorsData?.total ?? creatorsData.creators.length } : x));
@@ -186,7 +353,15 @@ export const AdminPage: React.FC = () => {
           }
         }
       } else if (tab === 5) {
-        const auditsData = await adminListAuditLogsApi({ limit: activePageSize, offset: (activePage - 1) * activePageSize });
+        const auditParams: AdminAuditLogsFilter = {
+          limit: activePageSize,
+          offset: (activePage - 1) * activePageSize,
+        };
+        if (auditSearch.trim()) auditParams.search = auditSearch.trim();
+        if (auditTargetType) auditParams.target_type = auditTargetType;
+        if (auditAction) auditParams.action = auditAction;
+
+        const auditsData = await adminListAuditLogsApi(auditParams);
         if (seq !== requestSeqRef.current) return;
         setAuditLogs(auditsData?.audit_logs || []);
         setPagination((p) => p.map((x, i) => i === tab && x.total !== (auditsData?.total ?? 0) ? { ...x, total: auditsData?.total ?? 0 } : x));
@@ -200,7 +375,24 @@ export const AdminPage: React.FC = () => {
     } finally {
       if (seq === requestSeqRef.current && !silent) setLoading(false);
     }
-  }, [tab, activePage, activePageSize]);
+  }, [
+    tab,
+    activePage,
+    activePageSize,
+    usersSearch,
+    usersRole,
+    walletsSearch,
+    walletsStatus,
+    walletsLinked,
+    entriesSearch,
+    entriesType,
+    entriesPeriod,
+    creatorsSearch,
+    creatorsStatus,
+    auditSearch,
+    auditTargetType,
+    auditAction,
+  ]);
 
   useEffect(() => {
     fetchData();
@@ -349,6 +541,237 @@ export const AdminPage: React.FC = () => {
         </ResponsiveTabs>
       </Box>
 
+      {/* Per-tab Search & Filter Bars (kept mounted during loading so input focus is preserved) */}
+      {tab === 0 && (
+        <AdminFilterBar
+          searchValue={usersSearchInput}
+          onSearchChange={setUsersSearchInput}
+          searchPlaceholder="Cari username atau ID..."
+          hasActiveFilters={hasUsersFilter}
+          onReset={() => {
+            setUsersSearchInput('');
+            setUsersSearch('');
+            setUsersRole('');
+            resetTabPageToFirst(0);
+          }}
+        >
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-users-role-label">Role</InputLabel>
+            <Select
+              labelId="admin-users-role-label"
+              id="admin-users-role"
+              label="Role"
+              value={usersRole}
+              onChange={(e) => {
+                setUsersRole(e.target.value as '' | UserRole);
+                resetTabPageToFirst(0);
+              }}
+            >
+              <MenuItem value="">Semua Role</MenuItem>
+              <MenuItem value="user">User</MenuItem>
+              <MenuItem value="admin">Admin</MenuItem>
+            </Select>
+          </FormControl>
+        </AdminFilterBar>
+      )}
+
+      {tab === 1 && (
+        <AdminFilterBar
+          searchValue={walletsSearchInput}
+          onSearchChange={setWalletsSearchInput}
+          searchPlaceholder="Cari nama buku, pembuat, pemilik..."
+          hasActiveFilters={hasWalletsFilter}
+          onReset={() => {
+            setWalletsSearchInput('');
+            setWalletsSearch('');
+            setWalletsStatus('');
+            setWalletsLinked('');
+            resetTabPageToFirst(1);
+          }}
+        >
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-wallets-status-label">Status</InputLabel>
+            <Select
+              labelId="admin-wallets-status-label"
+              id="admin-wallets-status"
+              label="Status"
+              value={walletsStatus}
+              onChange={(e) => {
+                setWalletsStatus(e.target.value as '' | 'active' | 'archived');
+                resetTabPageToFirst(1);
+              }}
+            >
+              <MenuItem value="">Semua Status</MenuItem>
+              <MenuItem value="active">Aktif</MenuItem>
+              <MenuItem value="archived">Diarsipkan</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-wallets-linked-label">Kepemilikan</InputLabel>
+            <Select
+              labelId="admin-wallets-linked-label"
+              id="admin-wallets-linked"
+              label="Kepemilikan"
+              value={walletsLinked}
+              onChange={(e) => {
+                setWalletsLinked(e.target.value as '' | 'linked' | 'unlinked');
+                resetTabPageToFirst(1);
+              }}
+            >
+              <MenuItem value="">Semua Kepemilikan</MenuItem>
+              <MenuItem value="linked">Terhubung</MenuItem>
+              <MenuItem value="unlinked">Belum Terhubung</MenuItem>
+            </Select>
+          </FormControl>
+        </AdminFilterBar>
+      )}
+
+      {tab === 2 && (
+        <AdminFilterBar
+          searchValue={entriesSearchInput}
+          onSearchChange={setEntriesSearchInput}
+          searchPlaceholder="Cari item, catatan, buku, pembuat..."
+          hasActiveFilters={hasEntriesFilter}
+          onReset={() => {
+            setEntriesSearchInput('');
+            setEntriesSearch('');
+            setEntriesType('');
+            setEntriesPeriod('');
+            resetTabPageToFirst(2);
+          }}
+        >
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-entries-type-label">Tipe</InputLabel>
+            <Select
+              labelId="admin-entries-type-label"
+              id="admin-entries-type"
+              label="Tipe"
+              value={entriesType}
+              onChange={(e) => {
+                setEntriesType(e.target.value as '' | EntryType);
+                resetTabPageToFirst(2);
+              }}
+            >
+              <MenuItem value="">Semua Tipe</MenuItem>
+              <MenuItem value="titipan">Titipan</MenuItem>
+              <MenuItem value="topup">Top-up</MenuItem>
+              <MenuItem value="koreksi">Koreksi</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-entries-period-label">Periode</InputLabel>
+            <Select
+              labelId="admin-entries-period-label"
+              id="admin-entries-period"
+              label="Periode"
+              value={entriesPeriod}
+              onChange={(e) => {
+                setEntriesPeriod(e.target.value as '' | 'today' | 'this_week' | 'this_month');
+                resetTabPageToFirst(2);
+              }}
+            >
+              <MenuItem value="">Semua Periode</MenuItem>
+              <MenuItem value="today">Hari Ini</MenuItem>
+              <MenuItem value="this_week">Minggu Ini</MenuItem>
+              <MenuItem value="this_month">Bulan Ini</MenuItem>
+            </Select>
+          </FormControl>
+        </AdminFilterBar>
+      )}
+
+      {tab === 3 && (
+        <AdminFilterBar
+          searchValue={creatorsSearchInput}
+          onSearchChange={setCreatorsSearchInput}
+          searchPlaceholder="Cari username pembuat..."
+          hasActiveFilters={hasCreatorsFilter}
+          onReset={() => {
+            setCreatorsSearchInput('');
+            setCreatorsSearch('');
+            setCreatorsStatus('');
+            resetTabPageToFirst(3);
+          }}
+        >
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-creators-status-label">Status</InputLabel>
+            <Select
+              labelId="admin-creators-status-label"
+              id="admin-creators-status"
+              label="Status"
+              value={creatorsStatus}
+              onChange={(e) => {
+                setCreatorsStatus(e.target.value as '' | 'has_outstanding' | 'has_active_wallets');
+                resetTabPageToFirst(3);
+              }}
+            >
+              <MenuItem value="">Semua Pembuat</MenuItem>
+              <MenuItem value="has_outstanding">Punya Piutang</MenuItem>
+              <MenuItem value="has_active_wallets">Punya Buku Aktif</MenuItem>
+            </Select>
+          </FormControl>
+        </AdminFilterBar>
+      )}
+
+      {tab === 5 && (
+        <AdminFilterBar
+          searchValue={auditSearchInput}
+          onSearchChange={setAuditSearchInput}
+          searchPlaceholder="Cari aktor, aksi, target, metadata..."
+          hasActiveFilters={hasAuditFilter}
+          onReset={() => {
+            setAuditSearchInput('');
+            setAuditSearch('');
+            setAuditTargetType('');
+            setAuditAction('');
+            resetTabPageToFirst(5);
+          }}
+        >
+          <FormControl size="small" sx={FILTER_SELECT_SX}>
+            <InputLabel id="admin-audit-target-label">Target Tipe</InputLabel>
+            <Select
+              labelId="admin-audit-target-label"
+              id="admin-audit-target"
+              label="Target Tipe"
+              value={auditTargetType}
+              onChange={(e) => {
+                setAuditTargetType(e.target.value);
+                resetTabPageToFirst(5);
+              }}
+            >
+              <MenuItem value="">Semua Target</MenuItem>
+              <MenuItem value="user">User</MenuItem>
+              <MenuItem value="wallet">Buku (Wallet)</MenuItem>
+              <MenuItem value="entry">Transaksi (Entry)</MenuItem>
+              <MenuItem value="entry_batch">Batch Transaksi</MenuItem>
+              <MenuItem value="link_request">Undangan (Link Request)</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={{ ...FILTER_SELECT_SX, minWidth: { xs: 0, sm: 190 } }}>
+            <InputLabel id="admin-audit-action-label">Aksi</InputLabel>
+            <Select
+              labelId="admin-audit-action-label"
+              id="admin-audit-action"
+              label="Aksi"
+              value={auditAction}
+              onChange={(e) => {
+                setAuditAction(e.target.value);
+                resetTabPageToFirst(5);
+              }}
+            >
+              <MenuItem value="">Semua Aksi</MenuItem>
+              {AUDIT_ACTIONS.map((action) => (
+                <MenuItem key={action} value={action}>
+                  {action}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </AdminFilterBar>
+      )}
+
       {loading && !tabError[tab] ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
           <CircularProgress />
@@ -373,7 +796,13 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {users.length === 0 ? <TableRow><TableCell colSpan={6} align="center">Tidak ada data pengguna.</TableCell></TableRow> : users.map((u) => (
+                    {users.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                          {hasUsersAppliedFilter ? 'Tidak ada data yang cocok dengan pencarian/filter.' : 'Tidak ada data pengguna.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : users.map((u) => (
                       <TableRow key={u.id} hover>
                         <TableCell><code style={{ whiteSpace: 'nowrap' }}>{u.id.substring(0, 8)}...</code></TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>{u.username}</TableCell>
@@ -443,7 +872,13 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {wallets.length === 0 ? <TableRow><TableCell colSpan={7} align="center">Tidak ada data buku.</TableCell></TableRow> : wallets.map((w) => (
+                    {wallets.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                          {hasWalletsAppliedFilter ? 'Tidak ada data yang cocok dengan pencarian/filter.' : 'Tidak ada data buku.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : wallets.map((w) => (
                       <TableRow key={w.id} hover>
                         <TableCell><code style={{ whiteSpace: 'nowrap' }}>{w.id.substring(0, 8)}...</code></TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>{w.name}</TableCell>
@@ -532,7 +967,7 @@ export const AdminPage: React.FC = () => {
                       {entries.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                            Tidak ada data transaksi.
+                            {hasEntriesAppliedFilter ? 'Tidak ada data yang cocok dengan pencarian/filter.' : 'Tidak ada data transaksi.'}
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -596,7 +1031,7 @@ export const AdminPage: React.FC = () => {
                     {creators.slice((pagination[3].page - 1) * pagination[3].pageSize, pagination[3].page * pagination[3].pageSize).length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                          Tidak ada data pembuat.
+                          {hasCreatorsAppliedFilter ? 'Tidak ada data yang cocok dengan pencarian/filter.' : 'Tidak ada data pembuat.'}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -699,7 +1134,13 @@ export const AdminPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {auditLogs.length === 0 ? <TableRow><TableCell colSpan={6} align="center">Tidak ada data audit log.</TableCell></TableRow> : auditLogs.map((log) => {
+                    {auditLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                          {hasAuditAppliedFilter ? 'Tidak ada data yang cocok dengan pencarian/filter.' : 'Tidak ada data audit log.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : auditLogs.map((log) => {
                       const meta = typeof log.metadata === 'string' ? log.metadata : JSON.stringify(log.metadata);
                       const isLong = meta.length > 100;
                       const open = Boolean(expandedMeta[log.id]);

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 )
 
 type AuditLogFilter struct {
+	Search     string
 	ActorID    *uuid.UUID
 	Action     string
 	TargetType string
@@ -79,7 +81,13 @@ func (r *sqlAuditRepository) List(ctx context.Context, filter AuditLogFilter) ([
 		argIdx++
 	}
 
-	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM audit_logs a %s;`, baseWhere)
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		baseWhere += fmt.Sprintf(" AND (COALESCE(u.username, '') ILIKE $%d OR a.action ILIKE $%d OR a.target_type ILIKE $%d OR COALESCE(a.target_id::text, '') ILIKE $%d OR COALESCE(a.metadata::text, '') ILIKE $%d)", argIdx, argIdx, argIdx, argIdx, argIdx)
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM audit_logs a LEFT JOIN users u ON a.actor_id = u.id %s;`, baseWhere)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("failed to count audit logs: %w", err)

@@ -253,6 +253,10 @@ func (m *mockEntryRepo) GetAdminCreators(ctx context.Context) ([]model.AdminCrea
 	return []model.AdminCreatorDetail{}, nil
 }
 
+func (m *mockEntryRepo) GetAdminCreatorsFiltered(ctx context.Context, filter repository.AdminCreatorFilter) ([]model.AdminCreatorDetail, error) {
+	return m.GetAdminCreators(ctx)
+}
+
 func (m *mockEntryRepo) GetAdminStatsBreakdown(ctx context.Context) (map[string]map[string]int64, error) {
 	return map[string]map[string]int64{
 		"titipan": {"count": 0, "total_amount": 0, "total_volume": 0},
@@ -355,6 +359,10 @@ func (m *mockWalletRepo) ListByUser(ctx context.Context, userID uuid.UUID, inclu
 
 func (m *mockWalletRepo) ListAll(ctx context.Context, limit, offset int) ([]model.Wallet, int64, error) {
 	return make([]model.Wallet, 0), 0, nil
+}
+
+func (m *mockWalletRepo) ListAllFiltered(ctx context.Context, filter repository.AdminWalletFilter) ([]model.Wallet, int64, error) {
+	return m.ListAll(ctx, filter.Limit, filter.Offset)
 }
 
 func (m *mockWalletRepo) UpdateName(ctx context.Context, id uuid.UUID, name string) error {
@@ -528,6 +536,21 @@ func (m *mockUserRepo) UpdatePassword(ctx context.Context, id uuid.UUID, newPass
 func (m *mockUserRepo) List(ctx context.Context, limit, offset int) ([]model.User, int64, error) {
 	res := make([]model.User, 0)
 	for _, u := range m.usersByID {
+		res = append(res, *u)
+	}
+	return res, int64(len(res)), nil
+}
+
+func (m *mockUserRepo) ListFiltered(ctx context.Context, filter repository.AdminUserFilter) ([]model.User, int64, error) {
+	res := make([]model.User, 0)
+	search := strings.ToLower(strings.TrimSpace(filter.Search))
+	for _, u := range m.usersByID {
+		if filter.Role != nil && u.Role != *filter.Role {
+			continue
+		}
+		if search != "" && !strings.Contains(strings.ToLower(u.Username), search) && !strings.Contains(strings.ToLower(u.ID.String()), search) {
+			continue
+		}
 		res = append(res, *u)
 	}
 	return res, int64(len(res)), nil

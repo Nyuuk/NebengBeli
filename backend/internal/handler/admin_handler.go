@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,10 +64,39 @@ func parsePagination(c *gin.Context, defaultLimit, maxLimit int) (limit, offset 
 	return limit, offset
 }
 
+func parseSearchQuery(c *gin.Context) string {
+	search := strings.TrimSpace(c.Query("search"))
+	if search == "" {
+		search = strings.TrimSpace(c.Query("q"))
+	}
+	return search
+}
+
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	limit, offset := parsePagination(c, 50, 200)
+	search := parseSearchQuery(c)
+	roleStr := strings.TrimSpace(c.Query("role"))
 
-	users, total, err := h.userRepo.List(c.Request.Context(), limit, offset)
+	var role *model.UserRole
+	if roleStr != "" {
+		switch model.UserRole(roleStr) {
+		case model.RoleUser, model.RoleAdmin:
+			r := model.UserRole(roleStr)
+			role = &r
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role filter, must be 'user' or 'admin'"})
+			return
+		}
+	}
+
+	filter := repository.AdminUserFilter{
+		Search: search,
+		Role:   role,
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	users, total, err := h.userRepo.ListFiltered(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -131,8 +161,28 @@ func (h *AdminHandler) ResetPassword(c *gin.Context) {
 
 func (h *AdminHandler) ListWallets(c *gin.Context) {
 	limit, offset := parsePagination(c, 50, 200)
+	search := parseSearchQuery(c)
+	status := strings.TrimSpace(c.Query("status"))
+	linked := strings.TrimSpace(c.Query("linked"))
 
-	wallets, total, err := h.walletRepo.ListAll(c.Request.Context(), limit, offset)
+	if status != "" && status != "active" && status != "archived" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status filter, must be 'active' or 'archived'"})
+		return
+	}
+	if linked != "" && linked != "linked" && linked != "unlinked" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid linked filter, must be 'linked' or 'unlinked'"})
+		return
+	}
+
+	filter := repository.AdminWalletFilter{
+		Search: search,
+		Status: status,
+		Linked: linked,
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	wallets, total, err := h.walletRepo.ListAllFiltered(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -179,7 +229,20 @@ func (h *AdminHandler) GetTrends(c *gin.Context) {
 }
 
 func (h *AdminHandler) ListCreators(c *gin.Context) {
-	creators, err := h.entryRepo.GetAdminCreators(c.Request.Context())
+	search := parseSearchQuery(c)
+	status := strings.TrimSpace(c.Query("status"))
+
+	if status != "" && status != "has_outstanding" && status != "has_active_wallets" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status filter, must be 'has_outstanding' or 'has_active_wallets'"})
+		return
+	}
+
+	filter := repository.AdminCreatorFilter{
+		Search: search,
+		Status: status,
+	}
+
+	creators, err := h.entryRepo.GetAdminCreatorsFiltered(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -226,6 +289,7 @@ func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
 	}
 
 	filter := repository.AuditLogFilter{
+		Search:     parseSearchQuery(c),
 		ActorID:    actorID,
 		Action:     action,
 		TargetType: targetType,
@@ -351,6 +415,7 @@ func (h *AdminHandler) parseAdminFilter(c *gin.Context) repository.AdminEntryFil
 	startDate, endDate, _ := service.ParseJakartaDateRange(period, startStr, endStr, time.Now())
 
 	return repository.AdminEntryFilter{
+		Search:    parseSearchQuery(c),
 		WalletID:  walletID,
 		CreatorID: creatorID,
 		Type:      entryType,

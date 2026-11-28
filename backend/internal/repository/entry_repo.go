@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,7 @@ type EntryFilter struct {
 }
 
 type AdminEntryFilter struct {
+	Search    string
 	WalletID  *uuid.UUID
 	CreatorID *uuid.UUID
 	Type      *model.EntryType
@@ -35,6 +37,11 @@ type AdminEntryFilter struct {
 	EndDate   *time.Time
 	Limit     int
 	Offset    int
+}
+
+type AdminCreatorFilter struct {
+	Search string
+	Status string // "", "has_outstanding", "has_active_wallets"
 }
 
 type EntryRepository interface {
@@ -51,6 +58,7 @@ type EntryRepository interface {
 	GetWalletSummary(ctx context.Context, walletID uuid.UUID) (*model.StatementSummary, error)
 	GetWalletSummaryWithFilter(ctx context.Context, walletID uuid.UUID, startDate, endDate *time.Time) (*model.StatementSummary, error)
 	GetAdminCreators(ctx context.Context) ([]model.AdminCreatorDetail, error)
+	GetAdminCreatorsFiltered(ctx context.Context, filter AdminCreatorFilter) ([]model.AdminCreatorDetail, error)
 	MoveEntry(ctx context.Context, sourceWalletID, targetWalletID uuid.UUID, entryID uuid.UUID, createdBy uuid.UUID, notes string, correctionClientID, targetClientID *uuid.UUID) (*model.Entry, *model.Entry, error)
 	CountAll(ctx context.Context) (int64, int64, error) // count, total volume
 	GetAdminStatsBreakdown(ctx context.Context) (map[string]map[string]int64, error)
@@ -320,6 +328,12 @@ func (r *sqlEntryRepository) ListAdminEntries(ctx context.Context, filter AdminE
 		argIdx++
 	}
 
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		baseWhere += fmt.Sprintf(" AND (e.item_name ILIKE $%d OR COALESCE(e.note, '') ILIKE $%d OR COALESCE(w.name, '') ILIKE $%d OR COALESCE(u.username, '') ILIKE $%d OR e.id::text ILIKE $%d)", argIdx, argIdx, argIdx, argIdx, argIdx)
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
 	// Calculate summary and count in one query
 	summaryQuery := fmt.Sprintf(`
 		SELECT
@@ -333,7 +347,8 @@ func (r *sqlEntryRepository) ListAdminEntries(ctx context.Context, filter AdminE
 			COALESCE(SUM(ABS(e.amount)), 0) AS total_volume,
 			COALESCE(SUM(e.amount), 0) AS net_balance
 		FROM entries e
-		JOIN wallets w ON e.wallet_id = w.id
+		LEFT JOIN wallets w ON e.wallet_id = w.id
+		LEFT JOIN users u ON e.created_by = u.id
 		%s;
 	`, baseWhere)
 
@@ -1014,7 +1029,19 @@ func (r *sqlEntryRepository) GetAdminTrends(ctx context.Context) (*model.Insight
 }
 
 func (r *sqlEntryRepository) GetAdminCreators(ctx context.Context) ([]model.AdminCreatorDetail, error) {
-	query := `
+	return r.GetAdminCreatorsFiltered(ctx, AdminCreatorFilter{})
+}
+
+func (r *sqlEntryRepository) GetAdminCreatorsFiltered(ctx context.Context, filter AdminCreatorFilter) ([]model.AdminCreatorDetail, error) {
+	whereClause := "WHERE (u.role = 'user' OR w.id IS NOT NULL)"
+	args := make([]interface{}, 0)
+
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		whereClause += " AND u.username ILIKE $1"
+		args = append(args, "%"+search+"%")
+	}
+
+	query := fmt.Sprintf(`
 		SELECT
 			u.id AS creator_id,
 			u.username,
@@ -1030,11 +1057,12 @@ func (r *sqlEntryRepository) GetAdminCreators(ctx context.Context) ([]model.Admi
 		FROM users u
 		LEFT JOIN wallets w ON w.creator_id = u.id
 		LEFT JOIN entries e ON e.wallet_id = w.id
-		WHERE u.role = 'user' OR w.id IS NOT NULL
+		%s
 		GROUP BY u.id, u.username
 		ORDER BY total_titipan_amount ASC, u.username ASC;
-	`
-	rows, err := r.db.QueryContext(ctx, query)
+	`, whereClause)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get admin creators: %w", err)
 	}
@@ -1060,6 +1088,14 @@ func (r *sqlEntryRepository) GetAdminCreators(ctx context.Context) ([]model.Admi
 		}
 		// Total outstanding for this creator (net balance is negative when money is owed to them)
 		c.TotalOutstanding = -(c.TotalTitipanAmount + c.TotalTopupAmount + c.TotalKoreksiAmount)
+
+		if filter.Status == "has_active_wallets" && c.ActiveWallets <= 0 {
+			continue
+		}
+		if filter.Status == "has_outstanding" && c.TotalOutstanding <= 0 {
+			continue
+		}
+
 		creators = append(creators, c)
 	}
 

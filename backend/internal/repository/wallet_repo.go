@@ -5,11 +5,20 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nyuuk/nebengbeli/internal/model"
 )
+
+type AdminWalletFilter struct {
+	Search string
+	Status string // "", "active", "archived"
+	Linked string // "", "linked", "unlinked"
+	Limit  int
+	Offset int
+}
 
 var (
 	ErrWalletNotFound     = errors.New("wallet not found")
@@ -26,6 +35,7 @@ type WalletRepository interface {
 	UnlinkOwner(ctx context.Context, id uuid.UUID) error
 	ListByUser(ctx context.Context, userID uuid.UUID, includeArchived bool) ([]model.Wallet, error)
 	ListAll(ctx context.Context, limit, offset int) ([]model.Wallet, int64, error)
+	ListAllFiltered(ctx context.Context, filter AdminWalletFilter) ([]model.Wallet, int64, error)
 	Count(ctx context.Context) (int64, int64, error) // total, active
 	IsUserAuthorized(ctx context.Context, walletID, userID uuid.UUID) (bool, error)
 	GetCreatorWalletsSummary(ctx context.Context, creatorID uuid.UUID) (int64, int64, int64, []model.Wallet, error)
@@ -292,6 +302,97 @@ func (r *sqlWalletRepository) ListAll(ctx context.Context, limit, offset int) ([
 			&w.EntryCount,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan wallet: %w", err)
+		}
+		w.IsArchived = w.ArchivedAt != nil
+		wallets = append(wallets, w)
+	}
+
+	return wallets, total, nil
+}
+
+func (r *sqlWalletRepository) ListAllFiltered(ctx context.Context, filter AdminWalletFilter) ([]model.Wallet, int64, error) {
+	baseWhere := `WHERE 1=1`
+	args := make([]interface{}, 0)
+	argIdx := 1
+
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		baseWhere += fmt.Sprintf(" AND (w.name ILIKE $%d OR cu.username ILIKE $%d OR COALESCE(ou.username, '') ILIKE $%d OR w.id::text ILIKE $%d)", argIdx, argIdx, argIdx, argIdx)
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	switch filter.Status {
+	case "active":
+		baseWhere += " AND w.archived_at IS NULL"
+	case "archived":
+		baseWhere += " AND w.archived_at IS NOT NULL"
+	}
+
+	switch filter.Linked {
+	case "linked":
+		baseWhere += " AND w.owner_id IS NOT NULL"
+	case "unlinked":
+		baseWhere += " AND w.owner_id IS NULL"
+	}
+
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(DISTINCT w.id)
+		FROM wallets w
+		LEFT JOIN users cu ON w.creator_id = cu.id
+		LEFT JOIN users ou ON w.owner_id = ou.id
+		%s;
+	`, baseWhere)
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count filtered wallets: %w", err)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT 
+			w.id, w.name, w.creator_id, w.owner_id, w.archived_at, w.created_at,
+			COALESCE(cu.username, '') AS creator_username,
+			COALESCE(ou.username, '') AS owner_username,
+			COALESCE(SUM(e.amount), 0) AS balance,
+			COALESCE(COUNT(e.id), 0) AS entry_count
+		FROM wallets w
+		LEFT JOIN users cu ON w.creator_id = cu.id
+		LEFT JOIN users ou ON w.owner_id = ou.id
+		LEFT JOIN entries e ON e.wallet_id = w.id
+		%s
+		GROUP BY w.id, cu.username, ou.username
+		ORDER BY w.created_at DESC, w.id DESC
+		LIMIT $%d OFFSET $%d;
+	`, baseWhere, argIdx, argIdx+1)
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	queryArgs := append(args, limit, filter.Offset)
+
+	rows, err := r.db.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list filtered wallets: %w", err)
+	}
+	defer rows.Close()
+
+	wallets := make([]model.Wallet, 0)
+	for rows.Next() {
+		var w model.Wallet
+		if err := rows.Scan(
+			&w.ID,
+			&w.Name,
+			&w.CreatorID,
+			&w.OwnerID,
+			&w.ArchivedAt,
+			&w.CreatedAt,
+			&w.CreatorUsername,
+			&w.OwnerUsername,
+			&w.Balance,
+			&w.EntryCount,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan filtered wallet: %w", err)
 		}
 		w.IsArchived = w.ArchivedAt != nil
 		wallets = append(wallets, w)

@@ -5,11 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nyuuk/nebengbeli/internal/model"
 )
+
+type AdminUserFilter struct {
+	Search string
+	Role   *model.UserRole
+	Limit  int
+	Offset int
+}
 
 var (
 	ErrUserNotFound      = errors.New("user not found")
@@ -26,6 +34,7 @@ type UserRepository interface {
 	UpdatePassword(ctx context.Context, id uuid.UUID, newPasswordHash string) error
 	UpdateRole(ctx context.Context, id uuid.UUID, oldRole, newRole model.UserRole) error
 	List(ctx context.Context, limit, offset int) ([]model.User, int64, error)
+	ListFiltered(ctx context.Context, filter AdminUserFilter) ([]model.User, int64, error)
 	Count(ctx context.Context) (int64, error)
 }
 
@@ -222,6 +231,67 @@ func (r *sqlUserRepository) List(ctx context.Context, limit, offset int) ([]mode
 			&u.CreatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+
+	return users, total, nil
+}
+
+func (r *sqlUserRepository) ListFiltered(ctx context.Context, filter AdminUserFilter) ([]model.User, int64, error) {
+	baseWhere := `WHERE 1=1`
+	args := make([]interface{}, 0)
+	argIdx := 1
+
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		baseWhere += fmt.Sprintf(" AND (username ILIKE $%d OR id::text ILIKE $%d)", argIdx, argIdx)
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	if filter.Role != nil {
+		baseWhere += fmt.Sprintf(" AND role = $%d", argIdx)
+		args = append(args, *filter.Role)
+		argIdx++
+	}
+
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM users %s;`, baseWhere)
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count filtered users: %w", err)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, username, role, token_version, created_at
+		FROM users
+		%s
+		ORDER BY created_at DESC, id DESC
+		LIMIT $%d OFFSET $%d;
+	`, baseWhere, argIdx, argIdx+1)
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	queryArgs := append(args, limit, filter.Offset)
+
+	rows, err := r.db.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list filtered users: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]model.User, 0)
+	for rows.Next() {
+		var u model.User
+		if err := rows.Scan(
+			&u.ID,
+			&u.Username,
+			&u.Role,
+			&u.TokenVersion,
+			&u.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan filtered user: %w", err)
 		}
 		users = append(users, u)
 	}

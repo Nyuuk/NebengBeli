@@ -31,6 +31,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Layout } from '../components/Layout';
 import { ResponsiveTabs } from '../components/ResponsiveTabs';
+import { AdminFilterBar } from '../components/AdminFilterBar';
 import { formatRupiah } from '../components/BalanceCard';
 import { CreatorInsightsCard } from '../components/CreatorInsightsCard';
 import { ShoppingSessionModal } from '../components/ShoppingSessionModal';
@@ -59,6 +60,7 @@ export const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [tab, setTab] = useState<number>(0); // 0 = Dompet Kelolaan (Creator), 1 = Dompet Milik Saya (Owner), 2 = Diarsipkan
+  const [walletSearch, setWalletSearch] = useState<string>('');
 
   // Modals
   const [openCreate, setOpenCreate] = useState<boolean>(false);
@@ -303,11 +305,39 @@ export const DashboardPage: React.FC = () => {
     return wallets.filter((w) => w.is_archived);
   }, [wallets]);
 
+  const trimmedSearch = walletSearch.trim();
+  const normalizedSearch = trimmedSearch.toLowerCase();
+  const isSearching = Boolean(trimmedSearch);
+
+  const matchesWalletSearch = useCallback(
+    (w: Wallet) => {
+      if (!normalizedSearch) return true;
+      return (
+        w.name.toLowerCase().includes(normalizedSearch) ||
+        (w.owner_username || '').toLowerCase().includes(normalizedSearch) ||
+        (w.creator_username || '').toLowerCase().includes(normalizedSearch)
+      );
+    },
+    [normalizedSearch]
+  );
+
+  const filteredCreatorWallets = useMemo(() => {
+    return creatorWallets.filter(matchesWalletSearch);
+  }, [creatorWallets, matchesWalletSearch]);
+
+  const filteredOwnerWallets = useMemo(() => {
+    return ownerWallets.filter(matchesWalletSearch);
+  }, [ownerWallets, matchesWalletSearch]);
+
+  const filteredArchivedWallets = useMemo(() => {
+    return archivedWallets.filter(matchesWalletSearch);
+  }, [archivedWallets, matchesWalletSearch]);
+
   // Group owner wallets per creator with subtotals
   const ownerWalletsByCreator = useMemo(() => {
     const groups: Record<string, { creator_username: string; wallets: Wallet[]; subtotal: number }> = {};
 
-    for (const w of ownerWallets) {
+    for (const w of filteredOwnerWallets) {
       const creatorKey = w.creator_username || w.creator_id || 'Unknown';
       if (!groups[creatorKey]) {
         groups[creatorKey] = {
@@ -321,7 +351,31 @@ export const DashboardPage: React.FC = () => {
     }
 
     return Object.values(groups);
-  }, [ownerWallets]);
+  }, [filteredOwnerWallets]);
+
+  const renderSearchEmptyState = () => (
+    <Paper
+      elevation={0}
+      variant="outlined"
+      sx={{
+        p: { xs: 3, sm: 5 },
+        textAlign: 'center',
+        borderRadius: 1.5,
+        borderColor: 'divider',
+      }}
+    >
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+        {`Tidak ada buku yang cocok dengan pencarian "${trimmedSearch}".`}
+      </Typography>
+      <Button
+        variant="outlined"
+        onClick={() => setWalletSearch('')}
+        sx={{ borderRadius: 1 }}
+      >
+        Reset Pencarian
+      </Button>
+    </Paper>
+  );
 
   return (
     <Layout>
@@ -407,11 +461,21 @@ export const DashboardPage: React.FC = () => {
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <ResponsiveTabs value={tab} onChange={(_, val) => setTab(val)}>
-          <Tab label={`Dompet Saya Kelola (${creatorWallets.length})`} />
-          <Tab label={`Dompet Milik Saya (${ownerWallets.length})`} />
-          <Tab label={`Diarsipkan (${archivedWallets.length})`} icon={<ArchiveIcon fontSize="small" />} iconPosition="start" />
+          <Tab label={`Dompet Saya Kelola (${filteredCreatorWallets.length})`} />
+          <Tab label={`Dompet Milik Saya (${filteredOwnerWallets.length})`} />
+          <Tab label={`Diarsipkan (${filteredArchivedWallets.length})`} icon={<ArchiveIcon fontSize="small" />} iconPosition="start" />
         </ResponsiveTabs>
       </Box>
+
+      {/* Search Bar */}
+      <AdminFilterBar
+        searchValue={walletSearch}
+        onSearchChange={setWalletSearch}
+        searchPlaceholder="Cari nama buku, rekan, atau pembuat..."
+        searchAriaLabel="Cari buku dompet"
+        hasActiveFilters={isSearching}
+        onReset={() => setWalletSearch('')}
+      />
 
       {/* Tab 0: Dompet yang Saya Kelola (Pembuat) */}
       {tab === 0 && (
@@ -427,22 +491,26 @@ export const DashboardPage: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
               <CircularProgress />
             </Box>
-          ) : creatorWallets.length === 0 ? (
-            <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-              <AccountBalanceWalletIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Belum Ada Buku Titipan yang Anda Kelola
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-                Mulai buat buku titipan untuk mencatat talangan belanja rekan kerja.
-              </Typography>
-              <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpenCreate(true)}>
-                Buat Buku Sekarang
-              </Button>
-            </Paper>
+          ) : filteredCreatorWallets.length === 0 ? (
+            isSearching ? (
+              renderSearchEmptyState()
+            ) : (
+              <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                <AccountBalanceWalletIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Belum Ada Buku Titipan yang Anda Kelola
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                  Mulai buat buku titipan untuk mencatat talangan belanja rekan kerja.
+                </Typography>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpenCreate(true)}>
+                  Buat Buku Sekarang
+                </Button>
+              </Paper>
+            )
           ) : (
             <Grid container spacing={2.5}>
-              {creatorWallets.map((w) => (
+              {filteredCreatorWallets.map((w) => (
                 <Grid item xs={12} sm={6} md={4} key={w.id}>
                   <Card
                     elevation={0}
@@ -515,16 +583,20 @@ export const DashboardPage: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
               <CircularProgress />
             </Box>
-          ) : ownerWalletsByCreator.length === 0 ? (
-            <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-              <AccountBalanceWalletIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Belum Ada Buku Titipan Milik Anda
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Buku yang ditautkan oleh pembuat titipan (OB/rekan) akan muncul di sini setelah Anda menyetujui undangannya.
-              </Typography>
-            </Paper>
+          ) : filteredOwnerWallets.length === 0 ? (
+            isSearching ? (
+              renderSearchEmptyState()
+            ) : (
+              <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                <AccountBalanceWalletIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Belum Ada Buku Titipan Milik Anda
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Buku yang ditautkan oleh pembuat titipan (OB/rekan) akan muncul di sini setelah Anda menyetujui undangannya.
+                </Typography>
+              </Paper>
+            )
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3.5 }}>
               {ownerWalletsByCreator.map((group) => (
@@ -641,19 +713,23 @@ export const DashboardPage: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
               <CircularProgress />
             </Box>
-          ) : archivedWallets.length === 0 ? (
-            <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-              <ArchiveIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Tidak Ada Buku yang Diarsipkan
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Buku yang telah diselesaikan dan diarsipkan akan muncul di sini dalam mode baca-saja.
-              </Typography>
-            </Paper>
+          ) : filteredArchivedWallets.length === 0 ? (
+            isSearching ? (
+              renderSearchEmptyState()
+            ) : (
+              <Paper elevation={0} sx={{ p: 5, textAlign: 'center', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                <ArchiveIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 1 }} />
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Tidak Ada Buku yang Diarsipkan
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Buku yang telah diselesaikan dan diarsipkan akan muncul di sini dalam mode baca-saja.
+                </Typography>
+              </Paper>
+            )
           ) : (
             <Grid container spacing={2.5}>
-              {archivedWallets.map((w) => (
+              {filteredArchivedWallets.map((w) => (
                 <Grid item xs={12} sm={6} md={4} key={w.id}>
                   <Card
                     elevation={0}

@@ -4,6 +4,10 @@ import {
   User,
   Wallet,
   AdminTrends,
+  AdminUsersFilter,
+  AdminWalletsFilter,
+  AdminCreatorsFilter,
+  AdminAuditLogsFilter,
   AdminEntriesFilter,
   AdminEntriesResponse,
   AdminSummaryResponse,
@@ -26,8 +30,19 @@ export interface AdminStats {
   breakdown?: Record<string, { count: number; total_amount: number; total_volume: number }>;
 }
 
-export async function adminListUsersApi(limit = 50, offset = 0): Promise<{ users: User[]; total: number }> {
-  const data = await request<{ users?: User[]; total?: number }>(`/api/admin/users?limit=${limit}&offset=${offset}`);
+export async function adminListUsersApi(
+  limit = 50,
+  offset = 0,
+  filter?: AdminUsersFilter
+): Promise<{ users: User[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('limit', limit.toString());
+  searchParams.set('offset', offset.toString());
+  const trimmedSearch = filter?.search?.trim();
+  if (trimmedSearch) searchParams.set('search', trimmedSearch);
+  if (filter?.role) searchParams.set('role', filter.role);
+
+  const data = await request<{ users?: User[]; total?: number }>(`/api/admin/users?${searchParams.toString()}`);
   if (!data || typeof data !== 'object' || !Array.isArray(data.users)) {
     throw new Error('Malformed users response from server');
   }
@@ -50,24 +65,34 @@ export async function adminResetPasswordApi(targetUsername: string, newPassword:
   });
 }
 
-export async function adminListWalletsApi(limit = 50, offset = 0): Promise<{ wallets: Wallet[]; total: number }> {
-  const data = await request<{ wallets?: Wallet[]; total?: number }>(`/api/admin/wallets?limit=${limit}&offset=${offset}`);
+export async function adminListWalletsApi(
+  limit = 50,
+  offset = 0,
+  filter?: AdminWalletsFilter
+): Promise<{ wallets: Wallet[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('limit', limit.toString());
+  searchParams.set('offset', offset.toString());
+  const trimmedSearch = filter?.search?.trim();
+  if (trimmedSearch) searchParams.set('search', trimmedSearch);
+  if (filter?.status) searchParams.set('status', filter.status);
+  if (filter?.linked) searchParams.set('linked', filter.linked);
+
+  const data = await request<{ wallets?: Wallet[]; total?: number }>(`/api/admin/wallets?${searchParams.toString()}`);
   if (!data || typeof data !== 'object' || !Array.isArray(data.wallets)) {
     throw new Error('Malformed wallets response from server');
   }
   return { wallets: data.wallets, total: typeof data.total === 'number' ? data.total : data.wallets.length };
 }
 
-export async function adminListAuditLogsApi(params: {
-  limit?: number;
-  offset?: number;
-  action?: string;
-  target_type?: string;
-  actor_id?: string;
-} = {}): Promise<{ audit_logs: AuditLog[]; total: number }> {
+export async function adminListAuditLogsApi(
+  params: AdminAuditLogsFilter = {}
+): Promise<{ audit_logs: AuditLog[]; total: number }> {
   const searchParams = new URLSearchParams();
   if (params.limit !== undefined) searchParams.set('limit', params.limit.toString());
   if (params.offset !== undefined) searchParams.set('offset', params.offset.toString());
+  const trimmedSearch = params.search?.trim();
+  if (trimmedSearch) searchParams.set('search', trimmedSearch);
   if (params.action) searchParams.set('action', params.action);
   if (params.target_type) searchParams.set('target_type', params.target_type);
   if (params.actor_id) searchParams.set('actor_id', params.actor_id);
@@ -109,6 +134,8 @@ export async function adminListEntriesApi(params: AdminEntriesFilter = {}): Prom
   if (params.limit !== undefined) searchParams.set('limit', params.limit.toString());
   if (params.offset !== undefined) searchParams.set('offset', params.offset.toString());
   if (params.page !== undefined && params.limit === undefined && params.offset === undefined) searchParams.set('page', params.page.toString());
+  const trimmedSearch = params.search?.trim();
+  if (trimmedSearch) searchParams.set('search', trimmedSearch);
   if (params.type) searchParams.set('type', params.type);
   if (params.wallet_id) searchParams.set('wallet_id', params.wallet_id);
   if (params.creator_id) searchParams.set('creator_id', params.creator_id);
@@ -134,6 +161,8 @@ export async function adminListEntriesApi(params: AdminEntriesFilter = {}): Prom
 
 export async function adminGetSummaryApi(params: AdminEntriesFilter = {}): Promise<AdminSummaryResponse> {
   const searchParams = new URLSearchParams();
+  const trimmedSearch = params.search?.trim();
+  if (trimmedSearch) searchParams.set('search', trimmedSearch);
   if (params.period) searchParams.set('period', params.period);
   if (params.range) searchParams.set('range', params.range);
   if (params.start_date) searchParams.set('start_date', params.start_date);
@@ -154,8 +183,14 @@ export async function adminGetSummaryApi(params: AdminEntriesFilter = {}): Promi
   };
 }
 
-export async function adminListCreatorsApi(): Promise<AdminCreatorsResponse> {
-  const data = await request<AdminCreatorsResponse>('/api/admin/creators');
+export async function adminListCreatorsApi(filter?: AdminCreatorsFilter): Promise<AdminCreatorsResponse> {
+  const searchParams = new URLSearchParams();
+  const trimmedSearch = filter?.search?.trim();
+  if (trimmedSearch) searchParams.set('search', trimmedSearch);
+  if (filter?.status) searchParams.set('status', filter.status);
+  const qs = searchParams.toString();
+
+  const data = await request<AdminCreatorsResponse>(`/api/admin/creators${qs ? `?${qs}` : ''}`);
   if (!data || typeof data !== 'object' || !Array.isArray(data.creators)) {
     throw new Error('Malformed creators response from server');
   }

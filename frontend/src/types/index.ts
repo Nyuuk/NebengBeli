@@ -138,10 +138,36 @@ export interface AdminPeriodSummary {
   net_balance: number;
 }
 
+export interface AdminUsersFilter {
+  search?: string;
+  role?: UserRole;
+}
+
+export interface AdminWalletsFilter {
+  search?: string;
+  status?: 'active' | 'archived';
+  linked?: 'linked' | 'unlinked';
+}
+
+export interface AdminCreatorsFilter {
+  search?: string;
+  status?: 'has_outstanding' | 'has_active_wallets';
+}
+
+export interface AdminAuditLogsFilter {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  action?: string;
+  target_type?: string;
+  actor_id?: string;
+}
+
 export interface AdminEntriesFilter {
   limit?: number;
   offset?: number;
   page?: number;
+  search?: string;
   type?: EntryType;
   wallet_id?: string;
   creator_id?: string;
